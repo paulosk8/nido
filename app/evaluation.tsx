@@ -74,11 +74,11 @@ export default function EvaluationScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: { flexGrow: 1, padding: 20 },
-    title: { fontWeight: 'bold', marginBottom: 20, textAlign: 'center' },
-    card: { marginBottom: 15 },
-    questionText: { marginBottom: 10, fontWeight: 'bold' },
+    container: { flexGrow: 1, padding: 20, backgroundColor: '#f8fafc' },
+    title: { fontWeight: 'bold', marginBottom: 20, textAlign: 'center', color: '#334155' },
+    card: { marginBottom: 15, borderRadius: 24, backgroundColor: '#ffffff', elevation: 2 },
+    questionText: { marginBottom: 10, fontWeight: 'bold', color: '#475569' },
     radioRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 4 },
-    emptyText: { textAlign: 'center', marginBottom: 20 },
-    btn: { marginTop: 20 }
+    emptyText: { textAlign: 'center', marginBottom: 20, color: '#64748b' },
+    btn: { marginTop: 20, borderRadius: 24 }
 });

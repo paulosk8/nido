@@ -92,9 +92,9 @@ export default function RegisterBabyScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: { flexGrow: 1, padding: 20, backgroundColor: '#fdf2f8', justifyContent: 'center' },
-    card: { borderRadius: 24, padding: 10 },
-    input: { marginBottom: 15 },
-    label: { marginTop: 10, marginBottom: 8, fontWeight: 'bold' },
-    btn: { marginTop: 25, paddingVertical: 5 }
+    container: { flexGrow: 1, padding: 20, backgroundColor: '#f8fafc', justifyContent: 'center' },
+    card: { borderRadius: 24, padding: 10, backgroundColor: '#ffffff', elevation: 2 },
+    input: { marginBottom: 15, backgroundColor: '#ffffff' },
+    label: { marginTop: 10, marginBottom: 8, fontWeight: 'bold', color: '#475569' },
+    btn: { marginTop: 25, paddingVertical: 5, borderRadius: 24 }
 });

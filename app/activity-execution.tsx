@@ -95,9 +95,9 @@ export default function ActivityExecutionScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, padding: 20, backgroundColor: '#f9fafb', justifyContent: 'center' },
-    card: { marginBottom: 30, borderRadius: 16 },
+    container: { flex: 1, padding: 20, backgroundColor: '#f8fafc', justifyContent: 'center' },
+    card: { marginBottom: 30, borderRadius: 24, backgroundColor: '#ffffff', elevation: 2 },
     actionContainer: { alignItems: 'center' },
-    btn: { width: '80%', paddingVertical: 10 },
-    metaText: { marginTop: 15, fontWeight: 'bold', color: '#6b7280' }
+    btn: { width: '80%', paddingVertical: 10, borderRadius: 24 },
+    metaText: { marginTop: 15, fontWeight: 'bold', color: '#94a3b8' }
 });

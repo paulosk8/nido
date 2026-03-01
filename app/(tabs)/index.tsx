@@ -74,8 +74,10 @@ export default function HomeScreen() {
               left={(props) => <Avatar.Icon {...props} icon="baby-face-outline" />}
             />
             <Card.Content>
-              <Text>Semanas Gestación: {baby.weeks_gestation}</Text>
-              {baby.is_premature && <Text style={{ color: 'orange' }}>Bebé Prematuro</Text>}
+              <View style={styles.babyTextContainer}>
+                <Text style={styles.babyDetail}>Semanas Gestación: {baby.weeks_gestation}</Text>
+                {baby.is_premature && <Text style={{ color: '#f59e0b', fontWeight: 'bold' }}>Bebé Prematuro</Text>}
+              </View>
             </Card.Content>
           </Card>
         ))
@@ -98,7 +100,7 @@ const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
     padding: 20,
-    backgroundColor: '#f0f2f5',
+    backgroundColor: '#f8fafc', // Very light background
   },
   center: {
     flex: 1,
@@ -109,17 +111,18 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginBottom: 20,
     marginTop: 10,
-    color: '#333'
+    color: '#334155'
   },
   card: {
-    borderRadius: 20,
+    borderRadius: 24, // Softer curves
     elevation: 2,
     marginTop: 20,
+    backgroundColor: '#ffffff'
   },
   babyCard: {
-    borderRadius: 16,
+    borderRadius: 24,
     marginBottom: 15,
-    elevation: 3,
+    elevation: 2,
     backgroundColor: '#ffffff'
   },
   emptyState: {
@@ -129,13 +132,25 @@ const styles = StyleSheet.create({
   welcome: {
     marginVertical: 15,
     fontWeight: 'bold',
-    textAlign: 'center'
+    textAlign: 'center',
+    color: '#64748b'
   },
   btn: {
     marginTop: 20,
-    width: '100%'
+    width: '100%',
+    borderRadius: 24 // rounded button
   },
   btnOut: {
     marginTop: 40
+  },
+  babyTextContainer: {
+    marginTop: 10,
+    padding: 10,
+    backgroundColor: '#f1f5f9',
+    borderRadius: 12
+  },
+  babyDetail: {
+    color: '#475569',
+    marginBottom: 4
   }
 });

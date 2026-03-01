@@ -78,12 +78,12 @@ export default function ProgressDashboardScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: { flexGrow: 1, padding: 20, backgroundColor: '#f0f2f5' },
+    container: { flexGrow: 1, padding: 20, backgroundColor: '#f8fafc' },
     center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    title: { fontWeight: 'bold', marginBottom: 20, textAlign: 'center' },
-    card: { marginBottom: 15, borderRadius: 16 },
+    title: { fontWeight: 'bold', marginBottom: 20, textAlign: 'center', color: '#334155' },
+    card: { marginBottom: 15, borderRadius: 24, backgroundColor: '#ffffff', elevation: 2 },
     statRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
-    scoreText: { marginTop: 10, marginBottom: 5, fontWeight: '600' },
-    progressBar: { height: 10, borderRadius: 5 },
-    emptyText: { textAlign: 'center', marginVertical: 30, color: '#555' }
+    scoreText: { marginTop: 10, marginBottom: 5, fontWeight: '600', color: '#475569' },
+    progressBar: { height: 10, borderRadius: 8 },
+    emptyText: { textAlign: 'center', marginVertical: 30, color: '#94a3b8' }
 });

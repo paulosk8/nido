@@ -130,10 +130,10 @@ export default function ActivitiesListScreen() {
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1, padding: 15, backgroundColor: '#f9fafb' },
-    header: { marginBottom: 20, fontWeight: 'bold', color: '#111827' },
-    card: { marginBottom: 15, borderRadius: 16 },
+    container: { flex: 1, padding: 15, backgroundColor: '#f8fafc' },
+    header: { marginBottom: 20, fontWeight: 'bold', color: '#334155' },
+    card: { marginBottom: 15, borderRadius: 24, backgroundColor: '#ffffff', elevation: 2 },
     loader: { flex: 1, justifyContent: 'center' },
     chipRow: { flexDirection: 'row', marginTop: 10 },
-    chip: { backgroundColor: '#e5e7eb' }
+    chip: { backgroundColor: '#f1f5f9', borderRadius: 16 }
 });

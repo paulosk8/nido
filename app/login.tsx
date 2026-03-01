@@ -131,48 +131,34 @@ const styles = StyleSheet.create({
         flexGrow: 1,
         justifyContent: 'center',
         padding: 20,
-        backgroundColor: '#f5f5f5'
+        backgroundColor: '#f8fafc'
     },
     card: {
-        borderRadius: 20,
+        borderRadius: 24,
         padding: 10,
-        elevation: 4
+        elevation: 2,
+        backgroundColor: '#ffffff'
     },
     title: {
         textAlign: 'center',
-        fontWeight: 'bold'
+        fontWeight: 'bold',
+        color: '#334155'
     },
     input: {
-        marginBottom: 15
+        marginBottom: 15,
+        backgroundColor: '#ffffff'
     },
     mainBtn: {
         marginTop: 10,
         paddingVertical: 6,
-        borderRadius: 12,
+        borderRadius: 24,
     },
     txtBtn: {
         marginBottom: 4,
     },
-    dividerContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginVertical: 20
-    },
     button: {
         marginTop: 10,
-        paddingVertical: 5
-    },
-    divider: {
-        marginVertical: 20
-    },
-    orText: {
-        textAlign: 'center',
-        marginBottom: 10,
-        color: '#666',
-        fontSize: 12
-    },
-    googleBtn: {
-        borderColor: '#4285F4',
-        borderWidth: 1.5
+        paddingVertical: 5,
+        borderRadius: 24
     }
 });
