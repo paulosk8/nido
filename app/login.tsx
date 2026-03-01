@@ -14,11 +14,25 @@ export default function LoginScreen() {
     async function signInWithEmail() {
         if (!email || !password) return Alert.alert('Error', 'Completa los campos');
         setLoading(true);
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) {
             Alert.alert('Error', error.message);
             setLoading(false);
         } else {
+            // Asegurar que el tutor exista (por si el usuario ya se había creado en Auth previamente)
+            if (data?.session?.user) {
+                const tutor_upsert = await supabase.from('tutor').upsert([
+                    {
+                        tutor_id: data.session.user.id,
+                        email: data.session.user.email,
+                        google_id: data.session.user.id // placeholder temporal
+                    }
+                ], { onConflict: 'tutor_id' });
+
+                if (tutor_upsert.error) {
+                    console.error('Error verificando tutor:', tutor_upsert.error);
+                }
+            }
             router.replace('/(tabs)' as any);
         }
     }
@@ -32,6 +46,21 @@ export default function LoginScreen() {
         if (error) {
             Alert.alert('Error', error.message);
         } else if (data.session) {
+            // Registrar usuario en la tabla tutor
+            const tutor_insert = await supabase.from('tutor').insert([
+                {
+                    tutor_id: data.session.user.id,
+                    email: data.session.user.email,
+                    google_id: data.session.user.id // usando el ID para que coincida como placeholder para google auth si no se usa google
+                }
+            ]);
+
+            if (tutor_insert.error) {
+                console.error('Error al registrar tutor', tutor_insert.error);
+                // Si hay un error al insertar en la tabla tutor, es importante avisar porque romperá el registro de bebés
+                Alert.alert('Advertencia', 'El usuario se creó pero hubo un error en la Base de Datos. Detalles: ' + tutor_insert.error.message);
+            }
+
             Alert.alert('Éxito', 'Cuenta creada e inicio de sesión automático.');
             router.replace('/(tabs)' as any);
         } else {

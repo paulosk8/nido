@@ -19,12 +19,16 @@ export default function RegisterBabyScreen() {
         if (!name || !birthDate) return Alert.alert('Error', 'Nombre y fecha son obligatorios');
 
         setLoading(true);
+        const parsedWeeks = parseInt(weeks);
+        const isPremature = parsedWeeks < 37;
+
         const { error } = await supabase.from('baby').insert([{
             tutor_id: user?.id,
             name,
             birth_date: birthDate,
-            gestational_weeks: parseInt(weeks),
-            gender
+            weeks_gestation: parsedWeeks,
+            is_premature: isPremature,
+            sex: gender
         }]);
 
         if (error) {
