@@ -2,9 +2,18 @@ const tintColorLight = '#8b5cf6'; // Soft Lavender for emphasis
 const tintColorDark = '#a78bfa';
 
 export default {
+  palette: {
+    primary: '#4285F4', // Blue from the mockup
+    primaryDark: '#3367D6',
+    textDark: '#111827',
+    textMuted: '#6B7280',
+    backgroundLight: '#F0FDF4', // Soft greenish background from mockup
+    white: '#ffffff',
+    border: '#E5E7EB'
+  },
   light: {
-    text: '#334155', // Softer black
-    background: '#f8fafc', // Very light blue/gray off-white
+    text: '#111827',
+    background: '#ffffff',
     tint: tintColorLight,
     tabIconDefault: '#cbd5e1',
     tabIconSelected: tintColorLight,
@@ -12,8 +21,8 @@ export default {
   dark: {
     text: '#f8fafc',
     background: '#0f172a',
-    tint: tintColorDark,
+    tint: tintColorLight,
     tabIconDefault: '#475569',
-    tabIconSelected: tintColorDark,
+    tabIconSelected: tintColorLight,
   },
 };

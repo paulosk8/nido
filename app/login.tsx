@@ -1,11 +1,16 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Alert, ScrollView, StyleSheet } from 'react-native';
-import { Button, Card, TextInput } from 'react-native-paper';
+import { Alert, Dimensions, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { TextInput } from 'react-native-paper';
+import Colors from '../constants/Colors';
 import { supabase } from '../lib/supabase';
 
-export default function LoginScreen() {
+const { width, height } = Dimensions.get('window');
 
+export default function LoginScreen() {
+    const [isSignUp, setIsSignUp] = useState(false);
+    const [fullName, setFullName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
@@ -19,13 +24,11 @@ export default function LoginScreen() {
             Alert.alert('Error', error.message);
             setLoading(false);
         } else {
-            // Asegurar que el tutor exista (por si el usuario ya se había creado en Auth previamente)
             if (data?.session?.user) {
                 const tutor_upsert = await supabase.from('tutor').upsert([
                     {
                         tutor_id: data.session.user.id,
-                        email: data.session.user.email,
-                        google_id: data.session.user.id // placeholder temporal
+                        email: data.session.user.email
                     }
                 ], { onConflict: 'tutor_id' });
 
@@ -38,127 +41,244 @@ export default function LoginScreen() {
     }
 
     async function signUpWithEmail() {
-        if (!email || !password) return Alert.alert('Error', 'Completa los campos');
+        if (!email || !password || !fullName) return Alert.alert('Error', 'Completa todos los campos');
         setLoading(true);
-        // Al desactivar "Confirm Email" en Supabase, esto loguea al usuario automáticamente
         const { data, error } = await supabase.auth.signUp({ email, password });
 
         if (error) {
             Alert.alert('Error', error.message);
         } else if (data.session) {
-            // Registrar usuario en la tabla tutor
             const tutor_insert = await supabase.from('tutor').insert([
                 {
                     tutor_id: data.session.user.id,
                     email: data.session.user.email,
-                    google_id: data.session.user.id // usando el ID para que coincida como placeholder para google auth si no se usa google
+                    full_name: fullName
                 }
             ]);
 
             if (tutor_insert.error) {
                 console.error('Error al registrar tutor', tutor_insert.error);
-                // Si hay un error al insertar en la tabla tutor, es importante avisar porque romperá el registro de bebés
                 Alert.alert('Advertencia', 'El usuario se creó pero hubo un error en la Base de Datos. Detalles: ' + tutor_insert.error.message);
             }
 
-            Alert.alert('Éxito', 'Cuenta creada e inicio de sesión automático.');
-            router.replace('/(tabs)' as any);
+            router.replace('/register-baby' as any);
         } else {
             Alert.alert('Nota', 'Usuario registrado. Intenta iniciar sesión.');
         }
         setLoading(false);
     }
 
-
-
     return (
-        <ScrollView contentContainerStyle={styles.container}>
-            <Card style={styles.card}>
-                <Card.Title title="Nido stimulation" subtitle="Acompañando su crecimiento" titleStyle={styles.title} />
-                <Card.Content>
-                    <TextInput
-                        label="Correo Electrónico"
-                        value={email}
-                        onChangeText={setEmail}
-                        mode="outlined"
-                        style={styles.input}
-                        autoCapitalize="none"
-                        keyboardType="email-address"
-                        disabled={loading}
+        <KeyboardAvoidingView
+            style={styles.container}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+            <ScrollView contentContainerStyle={styles.scrollContainer} bounces={false}>
+                <View style={styles.imageContainer}>
+                    <Image
+                        source={require('../assets/images/bebe.png')}
+                        style={styles.babyImage}
+                        resizeMode="contain"
                     />
-                    <TextInput
-                        label="Contraseña"
-                        value={password}
-                        onChangeText={setPassword}
-                        secureTextEntry
-                        mode="outlined"
-                        style={styles.input}
-                        disabled={loading}
-                    />
-                    <Button
-                        mode="contained"
-                        onPress={signInWithEmail}
-                        loading={loading}
-                        style={styles.button}
+                </View>
 
-                    >
-                        Entrar
-                    </Button>
-                    <Button
-                        mode="text"
-                        onPress={signUpWithEmail}
-                        disabled={loading && !email.includes('@')}
-                        style={styles.mainBtn}
-                    >
-                        Iniciar Sesión
-                    </Button>
-                    <Button
-                        mode="text"
-                        onPress={signUpWithEmail}
-                        disabled={loading}
-                        style={styles.txtBtn}
-                    >
-                        ¿Eres nuevo? Regístrate aquí
-                    </Button>
-                </Card.Content>
-            </Card>
-        </ScrollView>
+                <View style={styles.bottomSheet}>
+                    <View style={styles.handle} />
+
+                    <Text style={styles.title}>Crezcamos Juntos</Text>
+                    <Text style={styles.subtitle}>
+                        Actividades diarias para impulsar el viaje de desarrollo de tu pequeño.
+                    </Text>
+
+                    <View style={styles.formContainer}>
+                        {isSignUp && (
+                            <TextInput
+                                label="Nombre completo"
+                                value={fullName}
+                                onChangeText={setFullName}
+                                mode="outlined"
+                                style={styles.input}
+                                textColor={Colors.palette.textDark}
+                                outlineColor={Colors.palette.border}
+                                activeOutlineColor={Colors.palette.primary}
+                                disabled={loading}
+                                theme={{ roundness: 12, colors: { primary: Colors.palette.primary, background: Colors.palette.white, text: Colors.palette.textDark } }}
+                            />
+                        )}
+                        <TextInput
+                            label="Correo Electrónico"
+                            value={email}
+                            onChangeText={setEmail}
+                            mode="outlined"
+                            style={styles.input}
+                            textColor={Colors.palette.textDark}
+                            outlineColor={Colors.palette.border}
+                            activeOutlineColor={Colors.palette.primary}
+                            autoCapitalize="none"
+                            keyboardType="email-address"
+                            disabled={loading}
+                            theme={{ roundness: 12, colors: { primary: Colors.palette.primary, background: Colors.palette.white, text: Colors.palette.textDark } }}
+                        />
+                        <TextInput
+                            label="Contraseña"
+                            value={password}
+                            onChangeText={setPassword}
+                            secureTextEntry
+                            mode="outlined"
+                            style={styles.input}
+                            textColor={Colors.palette.textDark}
+                            outlineColor={Colors.palette.border}
+                            activeOutlineColor={Colors.palette.primary}
+                            disabled={loading}
+                            theme={{ roundness: 12, colors: { primary: Colors.palette.primary, background: Colors.palette.white, text: Colors.palette.textDark } }}
+                        />
+
+                        {isSignUp ? (
+                            <TouchableOpacity
+                                style={[styles.primaryButton, loading && styles.primaryButtonDisabled]}
+                                onPress={signUpWithEmail}
+                                disabled={loading}
+                            >
+                                <Ionicons name="person-add" size={20} color="#fff" style={styles.buttonIcon} />
+                                <Text style={styles.primaryButtonText}>
+                                    {loading ? 'Creando cuenta...' : 'Crear Cuenta'}
+                                </Text>
+                            </TouchableOpacity>
+                        ) : (
+                            <TouchableOpacity
+                                style={[styles.primaryButton, loading && styles.primaryButtonDisabled]}
+                                onPress={signInWithEmail}
+                                disabled={loading}
+                            >
+                                <Ionicons name="mail" size={20} color="#fff" style={styles.buttonIcon} />
+                                <Text style={styles.primaryButtonText}>
+                                    {loading ? 'Cargando...' : 'Iniciar sesión con Email'}
+                                </Text>
+                            </TouchableOpacity>
+                        )}
+
+
+                        <View style={styles.footer}>
+                            <Text style={styles.footerText}>
+                                {isSignUp ? '¿Ya tienes una cuenta? ' : '¿No tienes una cuenta? '}
+                            </Text>
+                            <TouchableOpacity onPress={() => setIsSignUp(!isSignUp)} disabled={loading}>
+                                <Text style={styles.footerLink}>
+                                    {isSignUp ? 'Iniciar sesión' : 'Crear cuenta'}
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </ScrollView>
+        </KeyboardAvoidingView>
     );
 }
 
 const styles = StyleSheet.create({
     container: {
-        flexGrow: 1,
-        justifyContent: 'center',
-        padding: 20,
-        backgroundColor: '#f8fafc'
+        flex: 1,
+        backgroundColor: Colors.palette.backgroundLight,
     },
-    card: {
-        borderRadius: 24,
-        padding: 10,
-        elevation: 2,
-        backgroundColor: '#ffffff'
+    scrollContainer: {
+        flexGrow: 1,
+        justifyContent: 'space-between',
+    },
+    imageContainer: {
+        height: height * 0.45,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingTop: 40,
+        paddingHorizontal: 20,
+    },
+    babyImage: {
+        width: '100%',
+        height: '100%',
+    },
+    bottomSheet: {
+        flex: 1,
+        backgroundColor: Colors.palette.white,
+        borderTopLeftRadius: 40,
+        borderTopRightRadius: 40,
+        paddingHorizontal: 24,
+        paddingTop: 12,
+        paddingBottom: 40,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 8,
+        elevation: 10,
+    },
+    handle: {
+        width: 40,
+        height: 5,
+        backgroundColor: '#E5E7EB',
+        borderRadius: 3,
+        alignSelf: 'center',
+        marginBottom: 24,
     },
     title: {
-        textAlign: 'center',
+        fontSize: 28,
         fontWeight: 'bold',
-        color: '#334155'
+        color: Colors.palette.textDark,
+        textAlign: 'center',
+        marginBottom: 8,
+    },
+    subtitle: {
+        fontSize: 16,
+        color: Colors.palette.textMuted,
+        textAlign: 'center',
+        lineHeight: 24,
+        paddingHorizontal: 10,
+        marginBottom: 28,
+    },
+    formContainer: {
+        width: '100%',
     },
     input: {
-        marginBottom: 15,
-        backgroundColor: '#ffffff'
+        marginBottom: 16,
+        backgroundColor: Colors.palette.white,
+        fontSize: 15,
     },
-    mainBtn: {
-        marginTop: 10,
-        paddingVertical: 6,
-        borderRadius: 24,
+    primaryButton: {
+        backgroundColor: Colors.palette.primary,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: 30,
+        paddingVertical: 14,
+        marginTop: 8,
+        marginBottom: 24,
+        shadowColor: Colors.palette.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 4,
     },
-    txtBtn: {
-        marginBottom: 4,
+    primaryButtonDisabled: {
+        opacity: 0.7,
     },
-    button: {
-        marginTop: 10,
-        paddingVertical: 5,
-        borderRadius: 24
-    }
+    buttonIcon: {
+        marginRight: 8,
+    },
+    primaryButtonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '600',
+    },
+    footer: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginTop: 8,
+    },
+    footerText: {
+        color: Colors.palette.textMuted,
+        fontSize: 15,
+    },
+    footerLink: {
+        color: Colors.palette.primary,
+        fontSize: 15,
+        fontWeight: 'bold',
+    },
 });
