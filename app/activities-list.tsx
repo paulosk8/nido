@@ -2,6 +2,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { FlatList, StyleSheet, View } from 'react-native';
 import { ActivityIndicator, Avatar, Card, Chip, Text } from 'react-native-paper';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { calculateBabyAges } from '../lib/babyLogic';
 import { supabase } from '../lib/supabase';
 
@@ -100,7 +101,7 @@ export default function ActivitiesListScreen() {
     if (loading) return <ActivityIndicator style={styles.loader} />;
 
     return (
-        <View style={styles.container}>
+        <SafeAreaView style={styles.container}>
             <Text variant="headlineSmall" style={styles.header}>
                 Actividades para {displayAge} meses
             </Text>
@@ -125,7 +126,7 @@ export default function ActivitiesListScreen() {
                     </Card>
                 )}
             />
-        </View>
+        </SafeAreaView>
     );
 }
 

@@ -2,6 +2,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Button, Card, Text } from 'react-native-paper';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 
 export default function ActivityExecutionScreen() {
@@ -68,7 +69,7 @@ export default function ActivityExecutionScreen() {
     if (!activity) return <Text>Cargando...</Text>;
 
     return (
-        <View style={styles.container}>
+        <SafeAreaView style={styles.container}>
             <Card style={styles.card}>
                 <Card.Title title={activity.title} />
                 <Card.Content>
@@ -90,7 +91,7 @@ export default function ActivityExecutionScreen() {
                     </Button>
                 )}
             </View>
-        </View>
+        </SafeAreaView>
     );
 }
 

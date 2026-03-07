@@ -4,7 +4,6 @@ import React from 'react';
 
 import { useClientOnlyValue } from '@/components/useClientOnlyValue';
 import { useColorScheme } from '@/components/useColorScheme';
-import Colors from '@/constants/Colors';
 
 // You can explore the built-in icon families and icons on the web at https://icons.expo.fyi/
 function TabBarIcon(props: {
@@ -20,27 +19,40 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        // Disable the static render of the header on web
-        // to prevent a hydration error in React Navigation v6.
+        tabBarActiveTintColor: '#3b82f6', // Bright blue focus
+        tabBarInactiveTintColor: '#94a3b8',
+        tabBarShowLabel: true, // Restore Spanish text
         headerShown: useClientOnlyValue(false, true),
+        tabBarStyle: {
+          position: 'absolute',
+          bottom: 25,
+          left: 20,
+          right: 20,
+          elevation: 5,
+          backgroundColor: '#ffffff',
+          borderRadius: 40,
+          height: 70,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.1,
+          shadowRadius: 10,
+          borderTopWidth: 0, // remove default borderline
+        }
       }}>
       <Tabs.Screen
         name="index"
         options={{
           title: 'Inicio',
-          tabBarIcon: ({ color }) => <FontAwesome name="home" size={24} color={color} style={{ marginBottom: -3 }} />,
-          headerStyle: { backgroundColor: Colors[colorScheme ?? 'light'].background },
-          headerShadowVisible: false,
+          headerShown: false, // Custom header handled in screen
+          tabBarIcon: ({ color }) => <FontAwesome name="home" size={28} color={color} />,
         }}
       />
       <Tabs.Screen
         name="progress"
         options={{
           title: 'Progreso',
-          tabBarIcon: ({ color }) => <FontAwesome name="heartbeat" size={24} color={color} style={{ marginBottom: -3 }} />,
-          headerStyle: { backgroundColor: Colors[colorScheme ?? 'light'].background },
-          headerShadowVisible: false,
+          headerShown: false,
+          tabBarIcon: ({ color }) => <FontAwesome name="heartbeat" size={26} color={color} />,
         }}
       />
     </Tabs>

@@ -2,6 +2,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { Button, Card, RadioButton, Text } from 'react-native-paper';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 
 export default function EvaluationScreen() {
@@ -43,33 +44,35 @@ export default function EvaluationScreen() {
     };
 
     return (
-        <ScrollView contentContainerStyle={styles.container}>
-            <Text variant="headlineSmall" style={styles.title}>Evaluación de Actividad</Text>
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#f8fafc' }}>
+            <ScrollView contentContainerStyle={styles.container}>
+                <Text variant="headlineSmall" style={styles.title}>Evaluación de Actividad</Text>
 
-            {questions.length === 0 ? (
-                <Text style={styles.emptyText}>No hay preguntas para esta actividad. Presiona guardar para terminar.</Text>
-            ) : (
-                questions.map((q) => (
-                    <Card key={q.question_id} style={styles.card}>
-                        <Card.Content>
-                            <Text variant="bodyLarge" style={styles.questionText}>{q.question_text}</Text>
-                            <RadioButton.Group
-                                onValueChange={val => setResponses({ ...responses, [q.question_id]: parseInt(val) })}
-                                value={responses[q.question_id]?.toString() || '0'}
-                            >
-                                <View style={styles.radioRow}><RadioButton value="10" /><Text>Logrado</Text></View>
-                                <View style={styles.radioRow}><RadioButton value="5" /><Text>En proceso</Text></View>
-                                <View style={styles.radioRow}><RadioButton value="0" /><Text>No intentado/Aún no lo logra</Text></View>
-                            </RadioButton.Group>
-                        </Card.Content>
-                    </Card>
-                ))
-            )}
+                {questions.length === 0 ? (
+                    <Text style={styles.emptyText}>No hay preguntas para esta actividad. Presiona guardar para terminar.</Text>
+                ) : (
+                    questions.map((q) => (
+                        <Card key={q.question_id} style={styles.card}>
+                            <Card.Content>
+                                <Text variant="bodyLarge" style={styles.questionText}>{q.question_text}</Text>
+                                <RadioButton.Group
+                                    onValueChange={val => setResponses({ ...responses, [q.question_id]: parseInt(val) })}
+                                    value={responses[q.question_id]?.toString() || '0'}
+                                >
+                                    <View style={styles.radioRow}><RadioButton value="10" /><Text>Logrado</Text></View>
+                                    <View style={styles.radioRow}><RadioButton value="5" /><Text>En proceso</Text></View>
+                                    <View style={styles.radioRow}><RadioButton value="0" /><Text>No intentado/Aún no lo logra</Text></View>
+                                </RadioButton.Group>
+                            </Card.Content>
+                        </Card>
+                    ))
+                )}
 
-            <Button mode="contained" onPress={handleSave} loading={loading} style={styles.btn}>
-                Guardar Evaluación
-            </Button>
-        </ScrollView>
+                <Button mode="contained" onPress={handleSave} loading={loading} style={styles.btn}>
+                    Guardar Evaluación
+                </Button>
+            </ScrollView>
+        </SafeAreaView>
     );
 }
 
