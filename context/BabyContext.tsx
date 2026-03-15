@@ -17,6 +17,7 @@ interface BabyContextType {
     babies: Baby[];
     selectedBaby: Baby | null;
     loadingBabies: boolean;
+    isSwitchingBaby: boolean;
     setSelectedBaby: (baby: Baby) => void;
     refreshBabies: () => Promise<void>;
 }
@@ -25,6 +26,7 @@ const BabyContext = createContext<BabyContextType>({
     babies: [],
     selectedBaby: null,
     loadingBabies: true,
+    isSwitchingBaby: false,
     setSelectedBaby: () => { },
     refreshBabies: async () => { }
 });
@@ -34,6 +36,17 @@ export const BabyProvider = ({ children }: { children: React.ReactNode }) => {
     const [babies, setBabies] = useState<Baby[]>([]);
     const [selectedBaby, setSelectedBabyState] = useState<Baby | null>(null);
     const [loadingBabies, setLoadingBabies] = useState(true);
+    const [isSwitchingBaby, setIsSwitchingBaby] = useState(false);
+
+    // Wrapper to add loading state when manually switching baby
+    const handleSetSelectedBaby = (baby: Baby) => {
+        setIsSwitchingBaby(true);
+        setSelectedBabyState(baby);
+        // Gives screens a brief moment to render loading state before fetching new data
+        setTimeout(() => {
+            setIsSwitchingBaby(false);
+        }, 1200); // 1.2s smooth theoretical fetch delay
+    };
 
     const fetchBabies = async () => {
         if (!user) {
@@ -83,7 +96,8 @@ export const BabyProvider = ({ children }: { children: React.ReactNode }) => {
             babies,
             selectedBaby,
             loadingBabies,
-            setSelectedBaby: setSelectedBabyState,
+            isSwitchingBaby,
+            setSelectedBaby: handleSetSelectedBaby,
             refreshBabies: fetchBabies
         }}>
             {children}

@@ -32,7 +32,7 @@ export default function DailyPlanScreen() {
 
     const [activities, setActivities] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
+    const [completedLogs, setCompletedLogs] = useState<Record<string, any>>({});
     const [isRestDay, setIsRestDay] = useState(false);
 
     useEffect(() => {
@@ -98,13 +98,17 @@ export default function DailyPlanScreen() {
                     // Fetch logs to see if they're completed
                     const { data: logData } = await supabase
                         .from('activity_log')
-                        .select('activity_id')
+                        .select('activity_id, duration_real_minutes, performance_rating')
                         .eq('baby_id', baby_id)
                         .in('activity_id', activityIds)
                         .not('end_time', 'is', null);
 
                     if (logData) {
-                        setCompletedIds(new Set(logData.map(log => log.activity_id)));
+                        const logsMap: Record<string, any> = {};
+                        logData.forEach(l => {
+                            logsMap[l.activity_id] = l;
+                        });
+                        setCompletedLogs(logsMap);
                     }
                 }
             }
@@ -130,7 +134,7 @@ export default function DailyPlanScreen() {
                 <Text style={styles.mainTitle}>Plan de Hoy</Text>
                 <Text style={styles.subTitle}>Seleccionado especialmente para {babyName}</Text>
 
-                {completedIds.size === activities.length && activities.length > 0 && (
+                {Object.keys(completedLogs).length === activities.length && activities.length > 0 && (
                     <View style={styles.successCard}>
                         <MaterialCommunityIcons name="check-decagram" size={30} color="#16a34a" />
                         <View style={{ marginLeft: 12, flex: 1 }}>
@@ -144,14 +148,25 @@ export default function DailyPlanScreen() {
     };
 
     const renderActivity = ({ item }: { item: any }) => {
-        const isCompleted = completedIds.has(item.activity_id);
+        const log = completedLogs[item.activity_id];
+        const isCompleted = !!log;
         const areaUI = getAreaUI(item.category);
 
         return (
             <TouchableOpacity
                 style={[styles.activityCard, isCompleted && styles.completedCard]}
-                disabled={isCompleted}
-                onPress={() => router.push({ pathname: '/activity-execution', params: { activity_id: item.activity_id, baby_id } })}
+                onPress={() => router.push({
+                    pathname: '/activity-execution',
+                    params: isCompleted
+                        ? {
+                            activity_id: item.activity_id,
+                            baby_id,
+                            readOnly: 'true',
+                            rating: log.performance_rating,
+                            duration: log.duration_real_minutes
+                        }
+                        : { activity_id: item.activity_id, baby_id }
+                })}
                 activeOpacity={0.7}
             >
                 <View style={[styles.iconContainer, { backgroundColor: isCompleted ? '#e2e8f0' : areaUI.bg }]}>

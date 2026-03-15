@@ -1,7 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { Dimensions, Image, Modal, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Alert, Dimensions, Image, Modal, ActivityIndicator as RNActivityIndicator, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { ActivityIndicator, Text } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../../context/AuthContext';
@@ -49,17 +49,21 @@ const getExactAgeString = (birthDateString: string) => {
 };
 
 export default function HomeScreen() {
-  const { user, loading: authLoading } = useAuth();
-  const { babies, selectedBaby, setSelectedBaby, loadingBabies } = useBaby();
-  const [tutorName, setTutorName] = useState<string>('Mom');
+  const { user } = useAuth();
+  const { babies, selectedBaby, setSelectedBaby, loadingBabies, isSwitchingBaby } = useBaby();
+  const router = useRouter();
+
+  const [tutorName, setTutorName] = useState('Tutor');
   const [loadingProgress, setLoadingProgress] = useState(false);
   const [showBabySelector, setShowBabySelector] = useState(false);
   const [showBabyDetailsModal, setShowBabyDetailsModal] = useState(false);
-  const router = useRouter();
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [editTutorName, setEditTutorName] = useState('');
+  const [editBabyName, setEditBabyName] = useState('');
+  const [savingSettings, setSavingSettings] = useState(false);
 
-  // Progress State
-  const [globalProgress, setGlobalProgress] = useState({ completed: 0, total: 0 });
-  const [areaProgress, setAreaProgress] = useState({
+  const [dailyProgress, setDailyProgress] = useState({ completed: 0, total: 0 });
+  const [weeklyAreaProgress, setWeeklyAreaProgress] = useState({
     Motor: { completed: 0, total: 0 },
     Lenguaje: { completed: 0, total: 0 },
     Cognitivo: { completed: 0, total: 0 },
@@ -67,10 +71,10 @@ export default function HomeScreen() {
   });
 
   useEffect(() => {
-    if (!authLoading && !user) {
+    if (!user) {
       router.replace('/login' as any);
     }
-  }, [user, authLoading]);
+  }, [user]);
 
   const fetchProgressAndTutor = async () => {
     if (!user) return;
@@ -90,8 +94,8 @@ export default function HomeScreen() {
 
       // 2. Fetch progress for selected baby
       if (selectedBaby) {
-        setAreaProgress({ Motor: { completed: 0, total: 0 }, Lenguaje: { completed: 0, total: 0 }, Cognitivo: { completed: 0, total: 0 }, Social: { completed: 0, total: 0 } });
-        setGlobalProgress({ completed: 0, total: 0 });
+        setWeeklyAreaProgress({ Motor: { completed: 0, total: 0 }, Lenguaje: { completed: 0, total: 0 }, Cognitivo: { completed: 0, total: 0 }, Social: { completed: 0, total: 0 } });
+        setDailyProgress({ completed: 0, total: 0 });
 
         const { cronological, corrected, isPremature } = calculateBabyAges(
           selectedBaby.birth_date,
@@ -159,8 +163,9 @@ export default function HomeScreen() {
 
             if (activityData) {
               const logsSet = new Set(logData?.map(log => log.activity_id) || []);
-              let globalTotal = activityData.length;
-              let globalCompleted = logsSet.size;
+
+              let dailyTotal = 0;
+              let dailyCompleted = 0;
 
               const progressMap = { Motor: { completed: 0, total: 0 }, Lenguaje: { completed: 0, total: 0 }, Cognitivo: { completed: 0, total: 0 }, Social: { completed: 0, total: 0 } };
 
@@ -169,31 +174,35 @@ export default function HomeScreen() {
                 const isCompleted = logsSet.has(act.activity_id);
                 const isForToday = planMatch && planMatch.assigned_date === todayStr;
 
+                // DAILY PROGRESS (For Hero Card)
                 if (isForToday) {
-                  const areaName = (act.stimulation_area as any)?.name?.toLowerCase() || '';
+                  dailyTotal++;
+                  if (isCompleted) dailyCompleted++;
+                }
 
-                  let targetArea = 'Cognitivo';
-                  if (areaName.includes('motor')) targetArea = 'Motor';
-                  if (areaName.includes('lenguaje') || areaName.includes('language') || areaName.includes('auditory')) targetArea = 'Lenguaje';
-                  if (areaName.includes('social') || areaName.includes('emocional')) targetArea = 'Social';
-                  if (areaName.includes('cognitiv') || areaName.includes('sensory')) targetArea = 'Cognitivo';
+                // WEEKLY PROGRESS PER AREA (For Bottom Cards)
+                const areaName = (act.stimulation_area as any)?.name?.toLowerCase() || '';
+                let targetArea = 'Cognitivo';
+                if (areaName.includes('motor')) targetArea = 'Motor';
+                if (areaName.includes('lenguaje') || areaName.includes('language') || areaName.includes('auditory')) targetArea = 'Lenguaje';
+                if (areaName.includes('social') || areaName.includes('emocional')) targetArea = 'Social';
+                if (areaName.includes('cognitiv') || areaName.includes('sensory')) targetArea = 'Cognitivo';
 
-                  progressMap[targetArea as keyof typeof progressMap].total++;
-                  if (isCompleted) {
-                    progressMap[targetArea as keyof typeof progressMap].completed++;
-                  }
+                progressMap[targetArea as keyof typeof progressMap].total++;
+                if (isCompleted) {
+                  progressMap[targetArea as keyof typeof progressMap].completed++;
                 }
               });
 
-              setGlobalProgress({ completed: globalCompleted, total: globalTotal });
-              setAreaProgress(progressMap);
+              setDailyProgress({ completed: dailyCompleted, total: dailyTotal });
+              setWeeklyAreaProgress(progressMap);
             }
           }
         }
       } else {
         // Clear progress if no baby
-        setGlobalProgress({ completed: 0, total: 0 });
-        setAreaProgress({ Motor: { completed: 0, total: 0 }, Lenguaje: { completed: 0, total: 0 }, Cognitivo: { completed: 0, total: 0 }, Social: { completed: 0, total: 0 } });
+        setDailyProgress({ completed: 0, total: 0 });
+        setWeeklyAreaProgress({ Motor: { completed: 0, total: 0 }, Lenguaje: { completed: 0, total: 0 }, Cognitivo: { completed: 0, total: 0 }, Social: { completed: 0, total: 0 } });
       }
     } catch (err) {
       console.error('Error fetching progress for home screen:', err);
@@ -206,12 +215,57 @@ export default function HomeScreen() {
     if (user && !loadingBabies) {
       fetchProgressAndTutor();
     }
-  }, [user, selectedBaby, loadingBabies]);
+  }, [user, selectedBaby, loadingBabies, isSwitchingBaby]);
 
-  if (authLoading || loadingBabies) {
+  const handleEditProfile = () => {
+    setEditTutorName(tutorName);
+    setEditBabyName(selectedBaby ? selectedBaby.name : '');
+    setShowSettingsModal(true);
+  };
+
+  const handleSaveSettings = async () => {
+    if (!user || savingSettings) return;
+    setSavingSettings(true);
+
+    try {
+      // Update Tutor
+      if (editTutorName && editTutorName !== tutorName) {
+        const { error: tError } = await supabase
+          .from('tutor')
+          .update({ full_name: editTutorName })
+          .eq('tutor_id', user.id);
+        if (!tError) {
+          setTutorName(editTutorName.split(' ')[0]);
+        }
+      }
+
+      // Update Baby
+      if (editBabyName && selectedBaby && editBabyName !== selectedBaby.name) {
+        const { error: bError } = await supabase
+          .from('baby')
+          .update({ name: editBabyName })
+          .eq('baby_id', selectedBaby.baby_id);
+        if (!bError) {
+          // Optimistic UI update, might be slightly out of sync until BabyContext refreshes but good enough for UX
+          setSelectedBaby({ ...selectedBaby, name: editBabyName });
+        }
+      }
+
+      setShowSettingsModal(false);
+    } catch (error) {
+      Alert.alert('Error', 'No se pudieron guardar los cambios.');
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  if (loadingBabies || loadingProgress || isSwitchingBaby) {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color="#3b82f6" />
+        {isSwitchingBaby && (
+          <Text style={{ marginTop: 12, color: '#64748b', fontSize: 16 }}>Calculando plan de {selectedBaby?.name}...</Text>
+        )}
       </View>
     );
   }
@@ -219,10 +273,10 @@ export default function HomeScreen() {
   if (!user) return null;
 
   // Percentages Calculation
-  const globalPercentage = globalProgress.total > 0 ? Math.round((globalProgress.completed / globalProgress.total) * 100) : 0;
+  const dailyPercentage = dailyProgress.total > 0 ? Math.round((dailyProgress.completed / dailyProgress.total) * 100) : 0;
 
-  const getAreaPercentage = (areaKey: 'Motor' | 'Lenguaje' | 'Cognitivo' | 'Social') => {
-    const areaStats = areaProgress[areaKey];
+  const getWeeklyAreaPercentage = (areaKey: 'Motor' | 'Lenguaje' | 'Cognitivo' | 'Social') => {
+    const areaStats = weeklyAreaProgress[areaKey];
     if (areaStats.total === 0) return 0;
     return Math.round((areaStats.completed / areaStats.total) * 100);
   };
@@ -253,10 +307,64 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity style={styles.bellIcon} onPress={() => supabase.auth.signOut()}>
-            <MaterialCommunityIcons name="logout" size={24} color="#ef4444" />
-          </TouchableOpacity>
+          <View style={styles.headerRight}>
+            <TouchableOpacity onPress={() => setShowBabySelector(true)} style={styles.iconButton}>
+              <MaterialCommunityIcons name="face-man-profile" size={26} color="#0f172a" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleEditProfile} style={[styles.iconButton, { marginLeft: 10 }]}>
+              <MaterialCommunityIcons name="cog" size={26} color="#0f172a" />
+            </TouchableOpacity>
+          </View>
         </View>
+
+        {/* SETTINGS MODAL */}
+        <Modal visible={showSettingsModal} transparent={true} animationType="fade" onRequestClose={() => setShowSettingsModal(false)}>
+          <TouchableOpacity style={styles.modalOverlay} onPress={() => setShowSettingsModal(false)} activeOpacity={1}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Ajustes de Perfil</Text>
+
+              <View style={{ width: '100%', marginBottom: 16 }}>
+                <Text style={{ fontSize: 13, color: '#64748b', marginBottom: 6, fontWeight: 'bold', marginLeft: 4 }}>Tu Nombre (Tutor)</Text>
+                <TextInput
+                  style={styles.settingsInput}
+                  value={editTutorName}
+                  onChangeText={setEditTutorName}
+                  placeholder="Nombre del Tutor"
+                />
+              </View>
+
+              {selectedBaby && (
+                <View style={{ width: '100%', marginBottom: 24 }}>
+                  <Text style={{ fontSize: 13, color: '#64748b', marginBottom: 6, fontWeight: 'bold', marginLeft: 4 }}>Nombre del Bebé</Text>
+                  <TextInput
+                    style={styles.settingsInput}
+                    value={editBabyName}
+                    onChangeText={setEditBabyName}
+                    placeholder="Nombre del Bebé"
+                  />
+                </View>
+              )}
+
+              <TouchableOpacity style={styles.continueBtn} onPress={handleSaveSettings} disabled={savingSettings}>
+                {savingSettings ? (
+                  <RNActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text style={styles.continueBtnText}>Guardar Cambios</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={{ marginTop: 20, padding: 10 }}
+                onPress={() => {
+                  setShowSettingsModal(false);
+                  supabase.auth.signOut();
+                }}
+              >
+                <Text style={{ color: '#ef4444', fontWeight: 'bold' }}>Cerrar Sesión de la App</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
 
         {/* BABY DETAILS MODAL */}
         {selectedBaby && (
@@ -338,17 +446,17 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </Modal>
 
-        {/* MAIN CARD: CURRENT MILESTONE */}
+        {/* MAIN CARD: DAILY PLAN */}
         {selectedBaby ? (
           <View style={styles.mainCard}>
             <View style={styles.cardHeaderRow}>
-              <Text style={styles.milestoneLabel}>PLAN SEMANAL 🚀</Text>
+              <Text style={styles.milestoneLabel}>PLAN DIARIO 🚀</Text>
               <View style={styles.monthBadge}>
-                <Text style={styles.monthBadgeText}>{globalProgress.completed}/{globalProgress.total} Completadas</Text>
+                <Text style={styles.monthBadgeText}>{dailyProgress.completed}/{dailyProgress.total} Actividades Hoy</Text>
               </View>
             </View>
 
-            <Text style={styles.levelTitle}>{selectedBaby.name}'s Plan</Text>
+            <Text style={styles.levelTitle}>Progreso de Hoy</Text>
 
             <View style={styles.illustrationRow}>
               <Image
@@ -358,10 +466,10 @@ export default function HomeScreen() {
               />
 
               <View style={styles.nextStepBox}>
-                <Text style={styles.nextStepLabel}>Progreso Semanal</Text>
-                <Text style={styles.nextStepValue}>{globalPercentage}%</Text>
+                <Text style={styles.nextStepLabel}>Competado</Text>
+                <Text style={styles.nextStepValue}>{dailyPercentage}%</Text>
                 <View style={styles.progressBarBg}>
-                  <View style={[styles.progressBarFill, { width: `${globalPercentage}%` }]} />
+                  <View style={[styles.progressBarFill, { width: `${dailyPercentage}%` }]} />
                 </View>
               </View>
             </View>
@@ -371,7 +479,7 @@ export default function HomeScreen() {
               onPress={() => router.push({ pathname: '/daily-plan', params: { baby_id: selectedBaby.baby_id } })}
               activeOpacity={0.8}
             >
-              <Text style={styles.continueBtnText}>Ver Plan Diario</Text>
+              <Text style={styles.continueBtnText}>Ver Actividades de Hoy</Text>
               <MaterialCommunityIcons name="calendar-check" size={20} color="#fff" />
             </TouchableOpacity>
           </View>
@@ -389,8 +497,7 @@ export default function HomeScreen() {
         )}
 
         <View style={styles.devAreasHeader}>
-          <Text style={styles.devAreasTitle}>Áreas de Desarrollo</Text>
-          <Text style={styles.viewReportText}>Ver Reportes</Text>
+          <Text style={styles.devAreasTitle}>Resumen Semanal por Área</Text>
         </View>
 
         <View style={styles.devGrid}>
@@ -400,36 +507,38 @@ export default function HomeScreen() {
             { key: 'Cognitivo', title: 'Cognitivo', icon: 'head-lightbulb-outline', colors: AREA_COLORS.Cognitive, paramId: 'Cognitivo' },
             { key: 'Social', title: 'Social', icon: 'heart', colors: AREA_COLORS.Social, paramId: 'Social' }
           ].map((area) => {
-            const pct = getAreaPercentage(area.key as any);
-            const isPlannedToday = areaProgress[area.key as keyof typeof areaProgress].total > 0;
+            const pct = getWeeklyAreaPercentage(area.key as any);
+            const totalWeeklyActs = weeklyAreaProgress[area.key as keyof typeof weeklyAreaProgress].total;
+            const completedWeeklyActs = weeklyAreaProgress[area.key as keyof typeof weeklyAreaProgress].completed;
+            const hasWeeklyPlan = totalWeeklyActs > 0;
 
-            const bgColor = isPlannedToday ? area.colors.bg : '#F1F5F9';
-            const iconBg = isPlannedToday ? `${area.colors.bg}80` : '#E2E8F0';
-            const iconColor = isPlannedToday ? area.colors.highlight : '#94A3B8';
-            const textColor = isPlannedToday ? area.colors.text : '#94A3B8';
-            const subtitleText = isPlannedToday ? 'Reporte Diario' : 'Sin plan hoy';
+            const bgColor = hasWeeklyPlan ? area.colors.bg : '#F1F5F9';
+            const iconBg = hasWeeklyPlan ? `${area.colors.bg}80` : '#E2E8F0';
+            const iconColor = hasWeeklyPlan ? area.colors.highlight : '#94A3B8';
+            const textColor = hasWeeklyPlan ? area.colors.text : '#94A3B8';
+            const subtitleText = hasWeeklyPlan ? `${completedWeeklyActs}/${totalWeeklyActs} semanal` : 'Sin plan';
 
             return (
               <TouchableOpacity
                 key={area.key}
                 style={[styles.devCard, { backgroundColor: bgColor }]}
                 onPress={() => {
-                  if (selectedBaby && isPlannedToday) {
+                  if (selectedBaby && hasWeeklyPlan) {
                     router.push({ pathname: '/area-report', params: { baby_id: selectedBaby.baby_id, area: area.paramId } });
                   }
                 }}
-                activeOpacity={isPlannedToday ? 0.7 : 1}
+                activeOpacity={hasWeeklyPlan ? 0.7 : 1}
               >
                 <View style={styles.devCardHeader}>
                   <View style={[styles.devIconWrapper, { backgroundColor: iconBg }]}>
                     <MaterialCommunityIcons name={area.icon as any} size={24} color={iconColor} />
                   </View>
                   <Text style={[styles.devPercentage, { color: textColor }]}>
-                    {isPlannedToday ? `${pct}%` : '-'}
+                    {hasWeeklyPlan ? `${pct}%` : '-'}
                   </Text>
                 </View>
                 <Text style={[styles.devCardTitle, { color: textColor }]}>{area.title}</Text>
-                <Text style={[styles.devCardSubtitle, { color: isPlannedToday ? area.colors.highlight : textColor }]}>{subtitleText}</Text>
+                <Text style={[styles.devCardSubtitle, { color: hasWeeklyPlan ? area.colors.highlight : textColor }]}>{subtitleText}</Text>
               </TouchableOpacity>
             )
           })}
@@ -501,6 +610,27 @@ const styles = StyleSheet.create({
     color: '#0f172a',
     fontSize: 22,
     letterSpacing: -0.5
+  },
+  avatarCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#e2e8f0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  iconButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F8F9FB',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   bellIcon: {
     width: 48,
@@ -599,6 +729,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 18,
+    width: '100%'
   },
   continueBtnText: {
     color: '#FFFFFF',
@@ -742,5 +873,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#059669'
+  },
+  settingsInput: {
+    width: '100%',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 16,
+    color: '#0f172a',
+    borderWidth: 1,
+    borderColor: '#e2e8f0'
   }
 });

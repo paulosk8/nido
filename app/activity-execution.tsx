@@ -1,15 +1,22 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { Dimensions, Image, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Dimensions, Image, Modal, ActivityIndicator as RNActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { ActivityIndicator, Text } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
 
 const { width } = Dimensions.get('window');
 
+// Mapa de colores para las calificaciones (reused from area details)
+const RATING_UI = {
+    'Lo hizo solo': { bg: '#eafaf1', text: '#27ae60', icon: 'emoticon-happy' },
+    'Con ayuda': { bg: '#fdf7e3', text: '#f39c12', icon: 'account-group' },
+    'No lo intentó': { bg: '#f2f4f6', text: '#7f8c8d', icon: 'emoticon-neutral' },
+};
+
 export default function ActivityExecutionScreen() {
-    const { activity_id, baby_id } = useLocalSearchParams<{ activity_id: string; baby_id: string }>();
+    const { activity_id, baby_id, readOnly, rating, duration } = useLocalSearchParams<{ activity_id: string; baby_id: string; readOnly?: string; rating?: string; duration?: string }>();
     const router = useRouter();
 
     const [activity, setActivity] = useState<any>(null);
@@ -17,6 +24,14 @@ export default function ActivityExecutionScreen() {
     const [startTime, setStartTime] = useState<Date | null>(null);
     const [logId, setLogId] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
+    const [isEvalModalVisible, setIsEvalModalVisible] = useState(false);
+    const [evalLoading, setEvalLoading] = useState(false);
+
+    // Timer State
+    const [isTimerVisible, setIsTimerVisible] = useState(false);
+    const [timeLeft, setTimeLeft] = useState(300); // 5 minutes default (in seconds)
+    const [timerActive, setTimerActive] = useState(false);
+    const [actualDurationSeconds, setActualDurationSeconds] = useState(0);
 
     useEffect(() => {
         const fetchActivity = async () => {
@@ -35,6 +50,17 @@ export default function ActivityExecutionScreen() {
         fetchActivity();
     }, [activity_id]);
 
+    useEffect(() => {
+        let interval: ReturnType<typeof setInterval>;
+        if (timerActive) {
+            interval = setInterval(() => {
+                setTimeLeft((prev) => (prev > 0 ? prev - 1 : 0));
+                setActualDurationSeconds((prev) => prev + 1);
+            }, 1000);
+        }
+        return () => clearInterval(interval);
+    }, [timerActive]);
+
     const handleStartActivity = async () => {
         setIsStarted(true);
         setStartTime(new Date());
@@ -52,13 +78,68 @@ export default function ActivityExecutionScreen() {
 
         if (!error && data) {
             setLogId(data.log_id);
+            // Default 5 mins if not specified
+            setTimeLeft((activity?.duration_est_minutes || 5) * 60);
+            setActualDurationSeconds(0);
+            setIsTimerVisible(true);
+            setTimerActive(true);
         }
     };
 
     const handleFinishActivity = async () => {
+        setTimerActive(false);
+        setIsEvalModalVisible(true);
+    };
+
+    const handleResetTimer = () => {
+        setTimerActive(false);
+        setTimeLeft((activity?.duration_est_minutes || 5) * 60);
+        setActualDurationSeconds(0);
+    };
+
+    const submitEvaluation = async (rating: string) => {
         if (!logId || !startTime) return;
+        setEvalLoading(true);
         const endTime = new Date();
-        const durationRealMinutes = Math.round((endTime.getTime() - startTime.getTime()) / 60000);
+        const durationRealMinutes = Math.round(actualDurationSeconds / 60) || 1; // At least 1 min if they try
+
+        // calculate score based on age
+        const ageRangeName = activity.age_range?.name || '0-3 Meses';
+        let score = 0;
+
+        if (rating === 'No lo intentó') {
+            score = 0;
+        } else if (ageRangeName.includes('0-3') || ageRangeName.includes('3-6')) {
+            // For young babies, trying with help is great
+            if (rating === 'Con ayuda') score = 10;
+            if (rating === 'Lo hizo solo') score = 10;
+        } else {
+            // For older babies
+            if (rating === 'Con ayuda') score = 5;
+            if (rating === 'Lo hizo solo') score = 10;
+        }
+
+        await supabase
+            .from('activity_log')
+            .update({
+                end_time: endTime,
+                duration_real_minutes: durationRealMinutes,
+                performance_rating: rating,
+                performance_score: score
+            })
+            .eq('log_id', logId);
+
+        setEvalLoading(false);
+        setIsEvalModalVisible(false);
+        setIsTimerVisible(false);
+        router.replace('/(tabs)');
+    };
+
+    const handleSkip = async () => {
+        if (!logId || !startTime) return;
+        setEvalLoading(true);
+        const endTime = new Date();
+        const durationRealMinutes = Math.round(actualDurationSeconds / 60) || 1;
 
         await supabase
             .from('activity_log')
@@ -68,11 +149,10 @@ export default function ActivityExecutionScreen() {
             })
             .eq('log_id', logId);
 
-        // Redirect to evaluation
-        router.push({
-            pathname: '/evaluation',
-            params: { log_id: logId, activity_id }
-        });
+        setEvalLoading(false);
+        setIsEvalModalVisible(false);
+        setIsTimerVisible(false);
+        router.replace('/(tabs)');
     };
 
     if (loading) {
@@ -86,6 +166,12 @@ export default function ActivityExecutionScreen() {
     if (!activity) return null;
 
     const ageRangeName = activity.age_range?.name || '0-3 Meses';
+
+    const formatTime = (seconds: number) => {
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    };
 
     return (
         <SafeAreaView style={styles.container}>
@@ -110,14 +196,40 @@ export default function ActivityExecutionScreen() {
                     />
                     <View style={styles.heroOverlay}>
                         <View style={styles.durationBadge}>
-                            <MaterialCommunityIcons name="clock-outline" size={16} color="#3b82f6" style={{ marginRight: 4 }} />
-                            <Text style={styles.durationText}>{activity.duration_est_minutes || 5} Minutos</Text>
+                            <MaterialCommunityIcons
+                                name={readOnly === 'true' ? "clock-check-outline" : "clock-outline"}
+                                size={16}
+                                color="#3b82f6"
+                                style={{ marginRight: 4 }}
+                            />
+                            <Text style={styles.durationText}>
+                                {readOnly === 'true'
+                                    ? `Realizado en ${duration !== undefined && duration !== 'undefined' && duration !== 'null' ? duration : 0} Minutos`
+                                    : `${activity.duration_est_minutes || 5} Minutos`
+                                }
+                            </Text>
                         </View>
                     </View>
                 </View>
 
                 {/* Title and Meta Info */}
                 <Text style={styles.title}>{activity.title}</Text>
+
+                {/* Read Only Rating Badge */}
+                {readOnly === 'true' && rating && (
+                    <View style={styles.readOnlyBadgeRow}>
+                        <View style={[styles.readOnlyBadge, { backgroundColor: RATING_UI[rating as keyof typeof RATING_UI]?.bg || '#f1f5f9' }]}>
+                            <MaterialCommunityIcons
+                                name={RATING_UI[rating as keyof typeof RATING_UI]?.icon as any || 'help'}
+                                size={18}
+                                color={RATING_UI[rating as keyof typeof RATING_UI]?.text || '#64748b'}
+                            />
+                            <Text style={[styles.readOnlyBadgeText, { color: RATING_UI[rating as keyof typeof RATING_UI]?.text || '#64748b' }]}>
+                                Desempeño: {rating}
+                            </Text>
+                        </View>
+                    </View>
+                )}
 
                 {/* Description Card */}
                 <View style={styles.descCard}>
@@ -155,20 +267,173 @@ export default function ActivityExecutionScreen() {
 
             </ScrollView>
 
-            {/* Bottom Action Button */}
-            <View style={styles.footer}>
-                {!isStarted ? (
-                    <TouchableOpacity style={styles.primaryBtn} onPress={handleStartActivity} activeOpacity={0.8}>
-                        <MaterialCommunityIcons name="play" size={24} color="#fff" style={{ marginRight: 8 }} />
+            {/* Bottom Action Button            {/* Botón inferior fijo */}
+            {readOnly !== 'true' && !isStarted && (
+                <View style={styles.footer}>
+                    <TouchableOpacity
+                        style={styles.primaryBtn}
+                        onPress={handleStartActivity}
+                        activeOpacity={0.8}
+                    >
+                        <MaterialCommunityIcons name="play-circle" size={24} color="#fff" style={{ marginRight: 8 }} />
                         <Text style={styles.primaryBtnText}>Iniciar Actividad</Text>
                     </TouchableOpacity>
-                ) : (
-                    <TouchableOpacity style={[styles.primaryBtn, { backgroundColor: '#ea580c' }]} onPress={handleFinishActivity} activeOpacity={0.8}>
-                        <MaterialCommunityIcons name="check-all" size={24} color="#fff" style={{ marginRight: 8 }} />
-                        <Text style={styles.primaryBtnText}>Finalizar Actividad</Text>
-                    </TouchableOpacity>
-                )}
-            </View>
+                </View>
+            )}
+
+            {/* Modal de Evaluación */}
+            <Modal
+                visible={isEvalModalVisible}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={() => setIsEvalModalVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <TouchableOpacity style={styles.closeModalBtn} onPress={() => setIsEvalModalVisible(false)}>
+                            <MaterialCommunityIcons name="close" size={24} color="#94a3b8" />
+                        </TouchableOpacity>
+
+                        <Text style={styles.modalTitle}>Evaluación</Text>
+                        <Text style={styles.modalSubtitle}>¿Cómo le fue a tu bebé?</Text>
+
+                        <View style={styles.iconCircleWrapper}>
+                            <View style={styles.iconCircle}>
+                                <MaterialCommunityIcons name="tree" size={28} color="#45b5aa" />
+                            </View>
+                            <View style={styles.iconShadow} />
+                        </View>
+
+                        {/* Option 1: Lo hizo solo */}
+                        <TouchableOpacity
+                            style={[styles.evalOption, { backgroundColor: '#eafaf1' }]}
+                            onPress={() => submitEvaluation('Lo hizo solo')}
+                            disabled={evalLoading}
+                        >
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <View style={[styles.evalIconRound, { backgroundColor: '#27ae60' }]}>
+                                    <MaterialCommunityIcons name="emoticon-happy" size={20} color="#fff" />
+                                </View>
+                                <View style={{ marginLeft: 12 }}>
+                                    <Text style={styles.evalOptionTitle}>Lo hizo solo</Text>
+                                    <Text style={styles.evalOptionDesc}>Sin ayuda externa</Text>
+                                </View>
+                            </View>
+                            <View style={[styles.radioCircle, { borderColor: '#73c686', backgroundColor: '#eafaf1' }]} />
+                        </TouchableOpacity>
+
+                        {/* Option 2: Con ayuda */}
+                        <TouchableOpacity
+                            style={[styles.evalOption, { backgroundColor: '#fdf7e3' }]}
+                            onPress={() => submitEvaluation('Con ayuda')}
+                            disabled={evalLoading}
+                        >
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <View style={[styles.evalIconRound, { backgroundColor: '#f39c12' }]}>
+                                    <MaterialCommunityIcons name="account-group" size={20} color="#fff" />
+                                </View>
+                                <View style={{ marginLeft: 12 }}>
+                                    <Text style={styles.evalOptionTitle}>Con ayuda</Text>
+                                    <Text style={styles.evalOptionDesc}>Necesitó un empujoncito</Text>
+                                </View>
+                            </View>
+                            <View style={[styles.radioCircle, { borderColor: '#fcdb94', backgroundColor: '#fdf7e3' }]} />
+                        </TouchableOpacity>
+
+                        {/* Option 3: No lo intentó */}
+                        <TouchableOpacity
+                            style={[styles.evalOption, { backgroundColor: '#f2f4f6' }]}
+                            onPress={() => submitEvaluation('No lo intentó')}
+                            disabled={evalLoading}
+                        >
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <View style={[styles.evalIconRound, { backgroundColor: '#7f8c8d' }]}>
+                                    <MaterialCommunityIcons name="emoticon-neutral" size={20} color="#fff" />
+                                </View>
+                                <View style={{ marginLeft: 12 }}>
+                                    <Text style={styles.evalOptionTitle}>No lo intentó</Text>
+                                    <Text style={styles.evalOptionDesc}>Quizás la próxima vez</Text>
+                                </View>
+                            </View>
+                            <View style={[styles.radioCircle, { borderColor: '#bdc3c7', backgroundColor: '#f2f4f6' }]} />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity style={styles.skipBtn} onPress={handleSkip} disabled={evalLoading}>
+                            {evalLoading ? (
+                                <RNActivityIndicator size="small" color="#3b82f6" />
+                            ) : (
+                                <Text style={styles.skipBtnText}>Omitir por ahora</Text>
+                            )}
+                        </TouchableOpacity>
+
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Modal del Temporizador Flotante */}
+            <Modal
+                visible={isTimerVisible}
+                transparent={true}
+                animationType="slide"
+                onRequestClose={() => setIsTimerVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.timerModalContent}>
+                        <Text style={styles.modalTitle}>En Progreso</Text>
+                        <Text style={styles.modalSubtitle}>{activity?.title}</Text>
+
+                        {/* Animated Clock Circle */}
+                        <View style={styles.timerCircle}>
+                            <Text style={[styles.timerText, timeLeft <= 10 && { color: '#ef4444' }]}>
+                                {formatTime(timeLeft)}
+                            </Text>
+                        </View>
+
+                        {/* Controls */}
+                        <View style={styles.timerControlsRow}>
+                            <TouchableOpacity
+                                style={[styles.timerControlBtn, { backgroundColor: '#f8fafc', shadowColor: 'transparent', elevation: 0, marginRight: 16 }]}
+                                onPress={handleResetTimer}
+                            >
+                                <MaterialCommunityIcons
+                                    name="restart"
+                                    size={32}
+                                    color="#64748b"
+                                />
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={styles.timerControlBtn}
+                                onPress={() => setTimerActive(!timerActive)}
+                            >
+                                <MaterialCommunityIcons
+                                    name={timerActive ? 'pause' : 'play'}
+                                    size={40}
+                                    color="#fff"
+                                />
+                            </TouchableOpacity>
+                        </View>
+
+                        <Text style={styles.timerStatusText}>
+                            {timerActive ? 'La actividad está en curso' : 'Actividad pausada'}
+                        </Text>
+
+                        <TouchableOpacity
+                            style={[styles.primaryBtn, { backgroundColor: '#ea580c', width: '100%', marginTop: 24 }]}
+                            onPress={() => {
+                                setTimerActive(false);
+                                setIsTimerVisible(false);
+                                handleFinishActivity();
+                            }}
+                            activeOpacity={0.8}
+                        >
+                            <MaterialCommunityIcons name="check-all" size={24} color="#fff" style={{ marginRight: 8 }} />
+                            <Text style={styles.primaryBtnText}>Finalizar Actividad</Text>
+                        </TouchableOpacity>
+
+                    </View>
+                </View>
+            </Modal>
         </SafeAreaView>
     );
 }
@@ -296,6 +561,22 @@ const styles = StyleSheet.create({
         fontWeight: '500',
         fontSize: 13
     },
+    readOnlyBadgeRow: {
+        flexDirection: 'row',
+        marginBottom: 20
+    },
+    readOnlyBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 20,
+    },
+    readOnlyBadgeText: {
+        fontWeight: 'bold',
+        fontSize: 14,
+        marginLeft: 6
+    },
     descCard: {
         backgroundColor: '#ffffff',
         padding: 20,
@@ -411,5 +692,175 @@ const styles = StyleSheet.create({
         color: '#ffffff',
         fontSize: 18,
         fontWeight: 'bold'
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(51, 65, 85, 0.6)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    modalContent: {
+        width: '85%',
+        backgroundColor: '#ffffff',
+        borderRadius: 30,
+        padding: 24,
+        alignItems: 'center',
+        position: 'relative',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.2,
+        shadowRadius: 20,
+        elevation: 10
+    },
+    closeModalBtn: {
+        position: 'absolute',
+        top: 16,
+        right: 16,
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: '#f1f5f9',
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    modalTitle: {
+        fontSize: 22,
+        fontWeight: '900',
+        color: '#0f172a',
+        alignSelf: 'flex-start',
+        marginBottom: 4
+    },
+    modalSubtitle: {
+        fontSize: 14,
+        color: '#64748b',
+        alignSelf: 'flex-start',
+        marginBottom: 20
+    },
+    iconCircleWrapper: {
+        alignItems: 'center',
+        marginBottom: 24
+    },
+    iconCircle: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        backgroundColor: '#e6f7f5',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 6,
+        borderColor: '#ffffff',
+        shadowColor: '#cbd5e1',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.5,
+        shadowRadius: 10,
+        elevation: 5
+    },
+    iconShadow: {
+        width: 40,
+        height: 4,
+        backgroundColor: '#cbd5e1',
+        borderRadius: 2,
+        marginTop: 8,
+        opacity: 0.4
+    },
+    evalOption: {
+        width: '100%',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: 16,
+        borderRadius: 20,
+        marginBottom: 12
+    },
+    evalIconRound: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    evalOptionTitle: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#0f172a'
+    },
+    evalOptionDesc: {
+        fontSize: 12,
+        color: '#64748b',
+        marginTop: 2
+    },
+    radioCircle: {
+        width: 20,
+        height: 20,
+        borderRadius: 10,
+        borderWidth: 2,
+    },
+    skipBtn: {
+        marginTop: 16,
+        paddingVertical: 10,
+        paddingHorizontal: 20
+    },
+    skipBtnText: {
+        color: '#3b82f6',
+        fontWeight: '600',
+        fontSize: 15
+    },
+    timerModalContent: {
+        width: '90%',
+        backgroundColor: '#ffffff',
+        borderRadius: 40,
+        padding: 30,
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 20 },
+        shadowOpacity: 0.3,
+        shadowRadius: 30,
+        elevation: 10
+    },
+    timerCircle: {
+        width: 180,
+        height: 180,
+        borderRadius: 90,
+        borderWidth: 8,
+        borderColor: '#eff6ff',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginVertical: 30,
+        backgroundColor: '#ffffff',
+        shadowColor: '#3b82f6',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.2,
+        shadowRadius: 20,
+        elevation: 5
+    },
+    timerText: {
+        fontSize: 48,
+        fontWeight: '900',
+        color: '#3b82f6',
+        letterSpacing: -1
+    },
+    timerControlsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 16
+    },
+    timerControlBtn: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        backgroundColor: '#3b82f6',
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: '#3b82f6',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.4,
+        shadowRadius: 15,
+        elevation: 8
+    },
+    timerStatusText: {
+        color: '#64748b',
+        fontSize: 14,
+        fontWeight: '500'
     }
 });
