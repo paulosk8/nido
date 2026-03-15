@@ -32,7 +32,7 @@ const CircularProgress = ({ percentage }: { percentage: number }) => {
 };
 
 export default function ProgressScreen() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { selectedBaby, isSwitchingBaby } = useBaby();
   const router = useRouter();
 
@@ -172,6 +172,12 @@ export default function ProgressScreen() {
   };
 
   useEffect(() => {
+    if (!authLoading && !user) {
+      router.replace('/login' as any);
+    }
+  }, [user, authLoading]);
+
+  useEffect(() => {
     if (selectedBaby) {
       fetchProgress();
     }
@@ -186,7 +192,7 @@ export default function ProgressScreen() {
     </View>
   );
 
-  if (loading || isSwitchingBaby) return renderLoading();
+  if (authLoading || loading || isSwitchingBaby) return renderLoading();
 
   if (!selectedBaby) {
     return (

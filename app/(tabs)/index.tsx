@@ -49,7 +49,7 @@ const getExactAgeString = (birthDateString: string) => {
 };
 
 export default function HomeScreen() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { babies, selectedBaby, setSelectedBaby, loadingBabies, isSwitchingBaby } = useBaby();
   const router = useRouter();
 
@@ -71,10 +71,10 @@ export default function HomeScreen() {
   });
 
   useEffect(() => {
-    if (!user) {
+    if (!authLoading && !user) {
       router.replace('/login' as any);
     }
-  }, [user]);
+  }, [user, authLoading]);
 
   const fetchProgressAndTutor = async () => {
     if (!user) return;
@@ -259,7 +259,7 @@ export default function HomeScreen() {
     }
   };
 
-  if (loadingBabies || loadingProgress || isSwitchingBaby) {
+  if (authLoading || loadingBabies || loadingProgress || isSwitchingBaby) {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color="#3b82f6" />
