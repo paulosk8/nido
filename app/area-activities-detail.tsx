@@ -20,6 +20,9 @@ const RATING_UI = {
     'Lo hizo solo': { bg: '#eafaf1', text: '#27ae60', icon: 'emoticon-happy' },
     'Con ayuda': { bg: '#fdf7e3', text: '#f39c12', icon: 'account-group' },
     'No lo intentó': { bg: '#f2f4f6', text: '#7f8c8d', icon: 'emoticon-neutral' },
+    'Completada': { bg: '#eafaf1', text: '#27ae60', icon: 'check-circle' },
+    'Sin evaluar': { bg: '#f1f5f9', text: '#64748b', icon: 'help-circle-outline' },
+    'No realizada': { bg: '#fff1f2', text: '#e11d48', icon: 'close-circle' },
 };
 
 export default function AreaActivitiesDetailScreen() {
@@ -204,8 +207,8 @@ export default function AreaActivitiesDetailScreen() {
                         </View>
                     ) : (
                         activitiesLog.map((log) => {
-                            const ratingLabel = log.performance_rating || 'Sin evaluar';
-                            const rStyle = RATING_UI[ratingLabel as keyof typeof RATING_UI] || { bg: '#f1f5f9', text: '#64748b', icon: 'help' };
+                            const ratingLabel = log.performance_rating || 'Completada';
+                            const rStyle = RATING_UI[ratingLabel as keyof typeof RATING_UI] || RATING_UI['Sin evaluar'];
 
                             return (
                                 <TouchableOpacity

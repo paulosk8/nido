@@ -13,6 +13,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "../../context/AuthContext";
 import { useBaby } from "../../context/BabyContext";
 import { supabase } from "../../lib/supabase";
+import { generateMonthlyReportPDF } from "../../lib/pdfGenerator";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
 
 const { width } = Dimensions.get("window");
 
@@ -50,6 +53,9 @@ export default function ProgressScreen() {
     Cognitivo: { completed: 0, total: 0 },
     Social: { completed: 0, total: 0 },
   });
+  const [exportLoading, setExportLoading] = useState(false);
+  const [rawActivities, setRawActivities] = useState<any[]>([]);
+  const [rawLogs, setRawLogs] = useState<any[]>([]);
 
   const fetchProgress = async () => {
     if (!selectedBaby) {
@@ -104,7 +110,7 @@ export default function ProgressScreen() {
 
       const { data: planData } = await supabase
         .from("planned_activity")
-        .select("activity_id")
+        .select("activity_id, assigned_date")
         .eq("baby_id", selectedBaby.baby_id)
         .gte("assigned_date", startStr)
         .lte("assigned_date", endStr);
@@ -113,7 +119,7 @@ export default function ProgressScreen() {
         const plannedIds = planData.map((p) => p.activity_id);
         const { data: activityData } = await supabase
           .from("activity")
-          .select(`*, stimulation_area ( name )`)
+          .select(`*, stimulation_area ( name ), age_range ( name )`)
           .in("activity_id", plannedIds);
 
         const { data: logData } = await supabase
@@ -161,6 +167,15 @@ export default function ProgressScreen() {
 
           setGlobalProgress({ completed: globalCompleted, total: globalTotal });
           setAreaProgress(pMap);
+          
+          // Map activities with their assigned dates for the PDF
+          const activitiesWithDates = activityData.map(act => {
+            const plan = planData.find(p => p.activity_id === act.activity_id);
+            return { ...act, assigned_date: plan?.assigned_date };
+          });
+          
+          setRawActivities(activitiesWithDates);
+          setRawLogs(logData || []);
         }
       }
     } catch (err) {
@@ -248,6 +263,65 @@ export default function ProgressScreen() {
     },
   };
 
+  const handleExportPDF = async () => {
+    if (!selectedBaby || rawActivities.length === 0) return;
+    setExportLoading(true);
+
+    try {
+      // Prepare stats for PDF
+      const areas: any[] = Object.keys(areaProgress).map(key => {
+        const k = key as keyof typeof areaProgress;
+        const pct = areaProgress[k].total > 0 ? Math.round((areaProgress[k].completed / areaProgress[k].total) * 100) : 0;
+        return {
+          name: key === 'Social' ? 'Socio-afectivo' : key,
+          completed: areaProgress[k].completed,
+          total: areaProgress[k].total,
+          percentage: pct,
+          color: AREA_UI[k].barColor
+        };
+      });
+
+      // Prepare activities for PDF
+      const todayStr = format(new Date(), 'yyyy-MM-dd');
+      const activityDetails = rawActivities.map(act => {
+        const log = rawLogs.find(l => l.activity_id === act.activity_id);
+        const areaName = (act.stimulation_area as any)?.name || 'General';
+        
+        let rating = 'Pendiente';
+        if (log) {
+          rating = log.performance_rating || 'Completada';
+        } else if (act.assigned_date && act.assigned_date < todayStr) {
+          rating = 'No realizada';
+        }
+
+        return {
+          title: act.title,
+          category: areaName,
+          rating: rating,
+          date: act.assigned_date ? format(new Date(act.assigned_date + 'T12:00:00'), 'd MMM', { locale: es }) : 'N/A'
+        };
+      });
+
+      // Get age range from baby context or activities
+      const rangeName = rawActivities[0]?.age_range?.name || 'Etapa Actual';
+
+      await generateMonthlyReportPDF(
+        {
+          name: selectedBaby.name,
+          age_range: rangeName,
+          birth_date: selectedBaby.birth_date
+        },
+        areas,
+        activityDetails,
+        timeFrame
+      );
+    } catch (error) {
+      console.error("Error exporting PDF:", error);
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
   const renderAreaCard = (
     key: "Motor" | "Lenguaje" | "Cognitivo" | "Social",
   ) => {
@@ -306,12 +380,20 @@ export default function ProgressScreen() {
           <MaterialCommunityIcons name="arrow-left" size={24} color="#0f172a" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Reporte de Progreso</Text>
-        <TouchableOpacity style={styles.headerIconBtn}>
-          <MaterialCommunityIcons
-            name="dots-horizontal"
-            size={24}
-            color="#0f172a"
-          />
+        <TouchableOpacity 
+          style={styles.headerIconBtn}
+          onPress={handleExportPDF}
+          disabled={exportLoading}
+        >
+          {exportLoading ? (
+            <ActivityIndicator size="small" color="#3b82f6" />
+          ) : (
+            <MaterialCommunityIcons
+              name="share-variant-outline"
+              size={24}
+              color="#3b82f6"
+            />
+          )}
         </TouchableOpacity>
       </View>
 
@@ -368,6 +450,23 @@ export default function ProgressScreen() {
           <Text style={styles.greatJobSubtitle}>
             El bebé va por buen camino.{"\n"}¡Sigue así!
           </Text>
+          
+          <TouchableOpacity 
+            style={styles.exportButton} 
+            onPress={handleExportPDF}
+            disabled={exportLoading}
+          >
+            {exportLoading ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <>
+                <MaterialCommunityIcons name="file-pdf-box" size={20} color="#FFFFFF" />
+                <Text style={styles.exportButtonText}>
+                  Descargar Reporte {timeFrame === 'week' ? 'Semanal' : 'Mensual'}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
         </View>
 
         {/* Stimulation Areas Header */}
@@ -518,6 +617,26 @@ const styles = StyleSheet.create({
     color: "#64748b",
     textAlign: "center",
     lineHeight: 22,
+  },
+  exportButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 16,
+    marginTop: 20,
+    shadowColor: "#3b82f6",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  exportButtonText: {
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    marginLeft: 8,
+    fontSize: 14,
   },
   areasHeaderRow: {
     flexDirection: "row",

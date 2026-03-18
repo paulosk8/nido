@@ -13,6 +13,15 @@ const AREA_UI = {
     Social: { bg: '#E8EAF6', text: '#283593', icon: 'heart', secondaryBg: '#f6f7fb' },
 };
 
+const RATING_UI = {
+    'Lo hizo solo': { bg: '#eafaf1', text: '#27ae60', icon: 'emoticon-happy' },
+    'Con ayuda': { bg: '#fdf7e3', text: '#f39c12', icon: 'account-group' },
+    'No lo intentó': { bg: '#f2f4f6', text: '#7f8c8d', icon: 'emoticon-neutral' },
+    'Completada': { bg: '#eafaf1', text: '#27ae60', icon: 'check-circle' },
+    'Sin evaluar': { bg: '#f8fafc', text: '#64748b', icon: 'clipboard-text-outline' },
+    'No realizada': { bg: '#fff1f2', text: '#e11d48', icon: 'close-circle' },
+};
+
 const getAreaUI = (name: string) => {
     if (!name) return AREA_UI.Cognitivo;
     if (name.includes('Motor')) return AREA_UI.Motor;
@@ -172,10 +181,22 @@ export default function AreaReportScreen() {
                         <Text style={[styles.statusText, { color: '#15803d' }]}>Hecho</Text>
                     </View>
                 ) : (
-                    <View style={[styles.statusBadge, { backgroundColor: '#f1f5f9' }]}>
-                        <MaterialCommunityIcons name="clock-outline" size={16} color="#64748b" />
-                        <Text style={[styles.statusText, { color: '#475569' }]}>Pendiente</Text>
-                    </View>
+                    (() => {
+                        const activityDate = item.assigned_date ? new Date(item.assigned_date + 'T23:59:59') : new Date();
+                        const isPast = activityDate < new Date();
+                        
+                        return isPast ? (
+                            <View style={[styles.statusBadge, { backgroundColor: '#fff1f2' }]}>
+                                <MaterialCommunityIcons name="close-circle-outline" size={16} color="#e11d48" />
+                                <Text style={[styles.statusText, { color: '#be123c' }]}>No realizada</Text>
+                            </View>
+                        ) : (
+                            <View style={[styles.statusBadge, { backgroundColor: '#f1f5f9' }]}>
+                                <MaterialCommunityIcons name="clock-outline" size={16} color="#64748b" />
+                                <Text style={[styles.statusText, { color: '#475569' }]}>Pendiente</Text>
+                            </View>
+                        );
+                    })()
                 )}
             </View>
         );

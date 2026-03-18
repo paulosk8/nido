@@ -13,6 +13,9 @@ const RATING_UI = {
     'Lo hizo solo': { bg: '#eafaf1', text: '#27ae60', icon: 'emoticon-happy' },
     'Con ayuda': { bg: '#fdf7e3', text: '#f39c12', icon: 'account-group' },
     'No lo intentó': { bg: '#f2f4f6', text: '#7f8c8d', icon: 'emoticon-neutral' },
+    'Completada': { bg: '#eafaf1', text: '#27ae60', icon: 'check-circle' },
+    'Sin evaluar': { bg: '#f8fafc', text: '#64748b', icon: 'clipboard-text-outline' },
+    'No realizada': { bg: '#fff1f2', text: '#e11d48', icon: 'close-circle' },
 };
 
 export default function ActivityExecutionScreen() {
