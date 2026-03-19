@@ -2,68 +2,50 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Alert, Dimensions, Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { TextInput } from 'react-native-paper';
+import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
+import * as AuthSession from 'expo-auth-session';
+import { useAuth } from '../context/AuthContext';
 import Colors from '../constants/Colors';
 import { supabase } from '../lib/supabase';
 
-const { width, height } = Dimensions.get('window');
+const { height } = Dimensions.get('window');
 
 export default function LoginScreen() {
-    const [isSignUp, setIsSignUp] = useState(false);
-    const [fullName, setFullName] = useState('');
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
+    const { setSessionManually } = useAuth();
     const [loading, setLoading] = useState(false);
     const router = useRouter();
 
-    async function signInWithEmail() {
-        if (!email || !password) return Alert.alert('Error', 'Completa los campos');
+    async function signInWithGoogle() {
         setLoading(true);
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        const redirectUri = AuthSession.makeRedirectUri({
+            scheme: 'nido',
+        });
+
+        // Log the redirect URI for local/production debugging
+        console.log('Redirect URI:', redirectUri);
+
+        const { data, error } = await supabase.auth.signInWithOAuth({
+            provider: 'google',
+            options: {
+                redirectTo: redirectUri,
+                skipBrowserRedirect: true,
+            },
+        });
+
         if (error) {
-            Alert.alert('Error', error.message);
+            Alert.alert('Error de autenticación', error.message);
             setLoading(false);
-        } else {
-            if (data?.session?.user) {
-                const tutor_upsert = await supabase.from('tutor').upsert([
-                    {
-                        tutor_id: data.session.user.id,
-                        email: data.session.user.email
-                    }
-                ], { onConflict: 'tutor_id' });
-
-                if (tutor_upsert.error) {
-                    console.error('Error verificando tutor:', tutor_upsert.error);
-                }
-            }
-            router.replace('/(tabs)' as any);
+            return;
         }
-    }
 
-    async function signUpWithEmail() {
-        if (!email || !password || !fullName) return Alert.alert('Error', 'Completa todos los campos');
-        setLoading(true);
-        const { data, error } = await supabase.auth.signUp({ email, password });
-
-        if (error) {
-            Alert.alert('Error', error.message);
-        } else if (data.session) {
-            const tutor_insert = await supabase.from('tutor').insert([
-                {
-                    tutor_id: data.session.user.id,
-                    email: data.session.user.email,
-                    full_name: fullName
-                }
-            ]);
-
-            if (tutor_insert.error) {
-                console.error('Error al registrar tutor', tutor_insert.error);
-                Alert.alert('Advertencia', 'El usuario se creó pero hubo un error en la Base de Datos. Detalles: ' + tutor_insert.error.message);
+        if (data?.url) {
+            const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUri);
+            if (result.type === 'success') {
+                const { url } = result;
+                await setSessionManually(url);
+                router.replace('/');
             }
-
-            router.replace('/register-baby' as any);
-        } else {
-            Alert.alert('Nota', 'Usuario registrado. Intenta iniciar sesión.');
         }
         setLoading(false);
     }
@@ -91,83 +73,20 @@ export default function LoginScreen() {
                     </Text>
 
                     <View style={styles.formContainer}>
-                        {isSignUp && (
-                            <TextInput
-                                label="Nombre completo"
-                                value={fullName}
-                                onChangeText={setFullName}
-                                mode="outlined"
-                                style={styles.input}
-                                textColor={Colors.palette.textDark}
-                                outlineColor={Colors.palette.border}
-                                activeOutlineColor={Colors.palette.primary}
-                                disabled={loading}
-                                theme={{ roundness: 12, colors: { primary: Colors.palette.primary, background: Colors.palette.white, text: Colors.palette.textDark } }}
-                            />
-                        )}
-                        <TextInput
-                            label="Correo Electrónico"
-                            value={email}
-                            onChangeText={setEmail}
-                            mode="outlined"
-                            style={styles.input}
-                            textColor={Colors.palette.textDark}
-                            outlineColor={Colors.palette.border}
-                            activeOutlineColor={Colors.palette.primary}
-                            autoCapitalize="none"
-                            keyboardType="email-address"
+                        <TouchableOpacity
+                            style={[styles.primaryButton, loading && styles.primaryButtonDisabled]}
+                            onPress={signInWithGoogle}
                             disabled={loading}
-                            theme={{ roundness: 12, colors: { primary: Colors.palette.primary, background: Colors.palette.white, text: Colors.palette.textDark } }}
-                        />
-                        <TextInput
-                            label="Contraseña"
-                            value={password}
-                            onChangeText={setPassword}
-                            secureTextEntry
-                            mode="outlined"
-                            style={styles.input}
-                            textColor={Colors.palette.textDark}
-                            outlineColor={Colors.palette.border}
-                            activeOutlineColor={Colors.palette.primary}
-                            disabled={loading}
-                            theme={{ roundness: 12, colors: { primary: Colors.palette.primary, background: Colors.palette.white, text: Colors.palette.textDark } }}
-                        />
-
-                        {isSignUp ? (
-                            <TouchableOpacity
-                                style={[styles.primaryButton, loading && styles.primaryButtonDisabled]}
-                                onPress={signUpWithEmail}
-                                disabled={loading}
-                            >
-                                <Ionicons name="person-add" size={20} color="#fff" style={styles.buttonIcon} />
-                                <Text style={styles.primaryButtonText}>
-                                    {loading ? 'Creando cuenta...' : 'Crear Cuenta'}
-                                </Text>
-                            </TouchableOpacity>
-                        ) : (
-                            <TouchableOpacity
-                                style={[styles.primaryButton, loading && styles.primaryButtonDisabled]}
-                                onPress={signInWithEmail}
-                                disabled={loading}
-                            >
-                                <Ionicons name="mail" size={20} color="#fff" style={styles.buttonIcon} />
-                                <Text style={styles.primaryButtonText}>
-                                    {loading ? 'Cargando...' : 'Iniciar sesión con Email'}
-                                </Text>
-                            </TouchableOpacity>
-                        )}
-
-
-                        <View style={styles.footer}>
-                            <Text style={styles.footerText}>
-                                {isSignUp ? '¿Ya tienes una cuenta? ' : '¿No tienes una cuenta? '}
+                        >
+                            <Ionicons name="logo-google" size={20} color="#fff" style={styles.buttonIcon} />
+                            <Text style={styles.primaryButtonText}>
+                                {loading ? 'Cargando...' : 'Iniciar sesión con Google'}
                             </Text>
-                            <TouchableOpacity onPress={() => setIsSignUp(!isSignUp)} disabled={loading}>
-                                <Text style={styles.footerLink}>
-                                    {isSignUp ? 'Iniciar sesión' : 'Crear cuenta'}
-                                </Text>
-                            </TouchableOpacity>
-                        </View>
+                        </TouchableOpacity>
+
+                        <Text style={styles.policyText}>
+                            Al continuar, aceptas que cuidemos el neurodesarrollo de tu bebé con amor.
+                        </Text>
                     </View>
                 </View>
             </ScrollView>
@@ -235,11 +154,6 @@ const styles = StyleSheet.create({
     formContainer: {
         width: '100%',
     },
-    input: {
-        marginBottom: 16,
-        backgroundColor: Colors.palette.white,
-        fontSize: 15,
-    },
     primaryButton: {
         backgroundColor: Colors.palette.primary,
         flexDirection: 'row',
@@ -266,19 +180,12 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '600',
     },
-    footer: {
-        flexDirection: 'row',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginTop: 8,
-    },
-    footerText: {
+    policyText: {
+        fontSize: 13,
         color: Colors.palette.textMuted,
-        fontSize: 15,
-    },
-    footerLink: {
-        color: Colors.palette.primary,
-        fontSize: 15,
-        fontWeight: 'bold',
+        textAlign: 'center',
+        lineHeight: 18,
+        paddingHorizontal: 20,
+        marginTop: 10,
     },
 });

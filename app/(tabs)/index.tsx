@@ -70,11 +70,6 @@ export default function HomeScreen() {
     Social: { completed: 0, total: 0 }
   });
 
-  useEffect(() => {
-    if (!authLoading && !user) {
-      router.replace('/login' as any);
-    }
-  }, [user, authLoading]);
 
   const fetchProgressAndTutor = async () => {
     if (!user) return;

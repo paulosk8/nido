@@ -126,9 +126,7 @@ export default function DailyPlanScreen() {
                     <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
                         <MaterialCommunityIcons name="arrow-left" size={24} color="#0f172a" />
                     </TouchableOpacity>
-                    <View style={styles.bellIconBox}>
-                        <MaterialCommunityIcons name="bell" size={24} color="#3b82f6" />
-                    </View>
+                    <View style={{ width: 48 }} />
                 </View>
 
                 <Text style={styles.mainTitle}>Plan de Hoy</Text>
@@ -273,14 +271,6 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.5,
         shadowRadius: 10,
         elevation: 2,
-    },
-    bellIconBox: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
-        backgroundColor: '#ffffff',
-        justifyContent: 'center',
-        alignItems: 'center',
     },
     mainTitle: {
         fontSize: 32,
