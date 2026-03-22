@@ -48,67 +48,76 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   useEffect(() => {
+    let isMounted = true;
+
+    // Helper para sincronizar el perfil del tutor y re-vincular bebés si es necesario
+    const syncProfile = async (sessionUser: User) => {
+      try {
+        const { error } = await supabase.from('tutor').upsert([
+          {
+            tutor_id: sessionUser.id,
+            email: sessionUser.email,
+            full_name: sessionUser.user_metadata?.full_name || sessionUser.email?.split('@')[0] || 'Tutor'
+          }
+        ], { onConflict: 'tutor_id' });
+
+        if (error && error.code === '23505' && error.message.includes('tutor_email_key')) {
+          const { data: oldTutor } = await supabase.from('tutor').select('tutor_id').eq('email', sessionUser.email).single();
+          if (oldTutor && oldTutor.tutor_id !== sessionUser.id) {
+            console.log('Sync: Re-vinculando bebés de cuenta huérfana...');
+            await supabase.from('baby').update({ tutor_id: sessionUser.id }).eq('tutor_id', oldTutor.tutor_id);
+            await supabase.from('tutor').delete().eq('tutor_id', oldTutor.tutor_id);
+            await supabase.from('tutor').upsert([{
+              tutor_id: sessionUser.id,
+              email: sessionUser.email,
+              full_name: sessionUser.user_metadata?.full_name || sessionUser.email?.split('@')[0] || 'Tutor'
+            }]);
+          }
+        }
+      } catch (err) {
+        console.error('Error en syncProfile:', err);
+      }
+    };
+
     // 1. Obtener sesión inicial
     const initSession = async () => {
       try {
         const { data } = await supabase.auth.getSession();
-        setSession(data.session);
-        setUser(data.session?.user ?? null);
+        if (isMounted) {
+          setSession(data.session);
+          setUser(data.session?.user ?? null);
+          
+          if (data.session?.user) {
+            await syncProfile(data.session.user);
+          }
+        }
       } catch (error) {
         console.error("Error recuperando sesión:", error);
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
     initSession();
 
     // 2. Escuchar cambios en la autenticación
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      
-      if (session?.user) {
-        // Aseguramos que el perfil y los bebés estén vinculados ANTES de liberar la pantalla de carga
-        try {
-          const { error } = await supabase.from('tutor').upsert([
-            {
-              tutor_id: session.user.id,
-              email: session.user.email,
-              full_name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Tutor'
-            }
-          ], { onConflict: 'tutor_id' });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
+      if (!isMounted) return;
 
-          if (error) {
-            console.error('Error upserting tutor in AuthContext:', error);
-            // Manejo de cuentas huérfanas: el email ya existe en otro tutor_id (caso desarrollo)
-            if (error.code === '23505' && error.message.includes('tutor_email_key')) {
-              const { data: oldTutor } = await supabase.from('tutor').select('tutor_id').eq('email', session.user.email).single();
-              
-              if (oldTutor && oldTutor.tutor_id !== session.user.id) {
-                console.log('Cuenta huérfana detectada. Re-vinculando bebés...');
-                // 1. Re-vincular bebés al nuevo tutor_id
-                await supabase.from('baby').update({ tutor_id: session.user.id }).eq('tutor_id', oldTutor.tutor_id);
-                // 2. Borrar tutor antiguo
-                await supabase.from('tutor').delete().eq('tutor_id', oldTutor.tutor_id);
-                // 3. Re-intentar upsert
-                await supabase.from('tutor').upsert([{
-                  tutor_id: session.user.id,
-                  email: session.user.email,
-                  full_name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Tutor'
-                }]);
-              }
-            }
-          }
-        } catch (syncErr) {
-          console.error('Error sincronizando perfil en Auth:', syncErr);
-        }
+      setSession(currentSession);
+      setUser(currentSession?.user ?? null);
+
+      if (event === 'SIGNED_IN' && currentSession?.user) {
+        setLoading(true);
+        await syncProfile(currentSession.user);
+        setLoading(false);
+      } else if (event === 'SIGNED_OUT') {
+        setLoading(false);
       }
-
-      setLoading(false);
     });
 
     return () => {
+      isMounted = false;
       subscription.unsubscribe();
     };
   }, []);
