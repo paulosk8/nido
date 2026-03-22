@@ -2,7 +2,7 @@
   "expo": {
     "name": "nido",
     "slug": "nido",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "nido",
@@ -19,6 +19,7 @@
     },
     "android": {
       "package": "com.paulo.nido.app",
+      "versionCode": 2,
       "launchMode": "singleTask",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
