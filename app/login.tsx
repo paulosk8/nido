@@ -44,7 +44,7 @@ export default function LoginScreen() {
             if (result.type === 'success') {
                 const { url } = result;
                 await setSessionManually(url);
-                router.replace('/');
+                // No manual redirect here, _layout.tsx handles it automatically
             }
         }
         setLoading(false);

@@ -51,11 +51,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     // 1. Obtener sesión inicial
     const initSession = async () => {
       try {
-        const initialUrl = await Linking.getInitialURL();
-        if (initialUrl) {
-          await handleDeepLink(initialUrl);
-        }
-
         const { data } = await supabase.auth.getSession();
         setSession(data.session);
         setUser(data.session?.user ?? null);
@@ -68,33 +63,53 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     initSession();
 
-    const linkingSubscription = Linking.addEventListener('url', (event) => {
-      handleDeepLink(event.url);
-    });
-
     // 2. Escuchar cambios en la autenticación
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
-      setLoading(false);
-
+      
       if (session?.user) {
-        // Upsert tutor profile
-        supabase.from('tutor').upsert([
-          {
-            tutor_id: session.user.id,
-            email: session.user.email,
-            full_name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Tutor'
+        // Aseguramos que el perfil y los bebés estén vinculados ANTES de liberar la pantalla de carga
+        try {
+          const { error } = await supabase.from('tutor').upsert([
+            {
+              tutor_id: session.user.id,
+              email: session.user.email,
+              full_name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Tutor'
+            }
+          ], { onConflict: 'tutor_id' });
+
+          if (error) {
+            console.error('Error upserting tutor in AuthContext:', error);
+            // Manejo de cuentas huérfanas: el email ya existe en otro tutor_id (caso desarrollo)
+            if (error.code === '23505' && error.message.includes('tutor_email_key')) {
+              const { data: oldTutor } = await supabase.from('tutor').select('tutor_id').eq('email', session.user.email).single();
+              
+              if (oldTutor && oldTutor.tutor_id !== session.user.id) {
+                console.log('Cuenta huérfana detectada. Re-vinculando bebés...');
+                // 1. Re-vincular bebés al nuevo tutor_id
+                await supabase.from('baby').update({ tutor_id: session.user.id }).eq('tutor_id', oldTutor.tutor_id);
+                // 2. Borrar tutor antiguo
+                await supabase.from('tutor').delete().eq('tutor_id', oldTutor.tutor_id);
+                // 3. Re-intentar upsert
+                await supabase.from('tutor').upsert([{
+                  tutor_id: session.user.id,
+                  email: session.user.email,
+                  full_name: session.user.user_metadata?.full_name || session.user.email?.split('@')[0] || 'Tutor'
+                }]);
+              }
+            }
           }
-        ], { onConflict: 'tutor_id' }).then(({ error }) => {
-          if (error) console.error('Error upserting tutor in AuthContext:', error);
-        });
+        } catch (syncErr) {
+          console.error('Error sincronizando perfil en Auth:', syncErr);
+        }
       }
+
+      setLoading(false);
     });
 
     return () => {
       subscription.unsubscribe();
-      linkingSubscription.remove();
     };
   }, []);
 

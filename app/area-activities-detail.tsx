@@ -23,6 +23,7 @@ const RATING_UI = {
     'Completada': { bg: '#eafaf1', text: '#27ae60', icon: 'check-circle' },
     'Sin evaluar': { bg: '#f1f5f9', text: '#64748b', icon: 'help-circle-outline' },
     'No realizada': { bg: '#fff1f2', text: '#e11d48', icon: 'close-circle' },
+    'Pendiente': { bg: '#f8fafc', text: '#475569', icon: 'clock-outline' },
 };
 
 export default function AreaActivitiesDetailScreen() {
@@ -68,7 +69,7 @@ export default function AreaActivitiesDetailScreen() {
                 // Buscamos las actividades asignadas en ese rango de tiempo
                 const { data: planData } = await supabase
                     .from('planned_activity')
-                    .select('activity_id')
+                    .select('activity_id, assigned_date')
                     .eq('baby_id', selectedBaby.baby_id)
                     .gte('assigned_date', startStr)
                     .lte('assigned_date', endStr);
@@ -76,7 +77,7 @@ export default function AreaActivitiesDetailScreen() {
                 if (planData && planData.length > 0) {
                     const plannedIds = planData.map(p => p.activity_id);
 
-                    // Consultamos los LOGS de esas actividades que YA estén terminadas
+                    // Consultamos los LOGS
                     const { data: logsData, error: logError } = await supabase
                         .from('activity_log')
                         .select(`
@@ -86,21 +87,40 @@ export default function AreaActivitiesDetailScreen() {
                             duration_real_minutes,
                             performance_rating,
                             performance_score,
-                            activity (
-                                activity_id,
-                                title,
-                                duration_est_minutes,
-                                stimulation_area ( name )
-                            )
+                            activity_id
                         `)
                         .eq('baby_id', selectedBaby.baby_id)
-                        .in('activity_id', plannedIds)
-                        .not('end_time', 'is', null)
-                        .order('end_time', { ascending: false });
+                        .in('activity_id', plannedIds);
 
-                    if (!logError && logsData) {
+                    // Consultamos detalles de actividades
+                    const { data: actData } = await supabase
+                        .from('activity')
+                        .select(`
+                            activity_id,
+                            title,
+                            duration_est_minutes,
+                            stimulation_area ( name )
+                        `)
+                        .in('activity_id', plannedIds);
+
+                    if (!logError && actData) {
+                        const logsMap = new Map();
+                        if (logsData) {
+                            logsData.forEach(l => logsMap.set(l.activity_id, l));
+                        }
+
+                        const combined = actData.map(act => {
+                            const plan = planData.find(p => p.activity_id === act.activity_id);
+                            const log = logsMap.get(act.activity_id) || {};
+                            return {
+                                ...log,
+                                activity: act,
+                                assigned_date: plan?.assigned_date
+                            };
+                        });
+
                         // Filtramos en JavaScript por el área seleccionada
-                        const filteredLogs = logsData.filter((log: any) => {
+                        const filteredLogs = combined.filter((log: any) => {
                             const areaName = (log.activity?.stimulation_area as any)?.name?.toLowerCase() || '';
                             let targetArea = 'Cognitivo';
                             if (areaName.includes('motor')) targetArea = 'Motor';
@@ -109,6 +129,13 @@ export default function AreaActivitiesDetailScreen() {
                             if (areaName.includes('cognitiv') || areaName.includes('sensory')) targetArea = 'Cognitivo';
 
                             return targetArea === areaKey;
+                        });
+
+                        // Ordenar por assigned_date
+                        filteredLogs.sort((a, b) => {
+                            if (!a.assigned_date) return 1;
+                            if (!b.assigned_date) return -1;
+                            return new Date(a.assigned_date).getTime() - new Date(b.assigned_date).getTime();
                         });
 
                         setActivitiesLog(filteredLogs);
@@ -135,12 +162,12 @@ export default function AreaActivitiesDetailScreen() {
     };
 
     // Calculate Stats
-    const totalMinutes = activitiesLog.reduce((acc, log) => acc + (log.duration_real_minutes || log.activity?.duration_est_minutes || 0), 0);
-    const totalCount = activitiesLog.length;
+    const totalMinutes = activitiesLog.reduce((acc, log) => log.end_time ? acc + (log.duration_real_minutes || log.activity?.duration_est_minutes || 0) : acc, 0);
+    const totalCount = activitiesLog.filter(l => l.end_time).length;
     const scoresCount = {
-        solo: activitiesLog.filter(log => log.performance_rating === 'Lo hizo solo').length,
-        help: activitiesLog.filter(log => log.performance_rating === 'Con ayuda').length,
-        none: activitiesLog.filter(log => log.performance_rating === 'No lo intentó').length,
+        solo: activitiesLog.filter(log => log.end_time && log.performance_rating === 'Lo hizo solo').length,
+        help: activitiesLog.filter(log => log.end_time && log.performance_rating === 'Con ayuda').length,
+        none: activitiesLog.filter(log => log.end_time && log.performance_rating === 'No lo intentó').length,
     };
 
     return (
@@ -206,13 +233,22 @@ export default function AreaActivitiesDetailScreen() {
                             </Text>
                         </View>
                     ) : (
-                        activitiesLog.map((log) => {
-                            const ratingLabel = log.performance_rating || 'Completada';
+                        activitiesLog.map((log, index) => {
+                            const isCompleted = !!log.end_time;
+                            const isPast = log.assigned_date ? new Date(log.assigned_date + 'T23:59:59') < new Date() : false;
+                            
+                            let ratingLabel = log.performance_rating;
+                            if (!isCompleted) {
+                                ratingLabel = isPast ? 'No realizada' : 'Pendiente';
+                            } else if (!ratingLabel) {
+                                ratingLabel = 'Completada';
+                            }
+                            
                             const rStyle = RATING_UI[ratingLabel as keyof typeof RATING_UI] || RATING_UI['Sin evaluar'];
 
                             return (
                                 <TouchableOpacity
-                                    key={log.log_id}
+                                    key={log.log_id || `pending-${index}`}
                                     style={styles.logCard}
                                     activeOpacity={0.8}
                                     onPress={() => router.push({
@@ -220,9 +256,9 @@ export default function AreaActivitiesDetailScreen() {
                                         params: {
                                             activity_id: log.activity?.activity_id,
                                             baby_id: selectedBaby?.baby_id,
-                                            readOnly: 'true',
-                                            rating: ratingLabel,
-                                            duration: log.duration_real_minutes
+                                            readOnly: isCompleted ? 'true' : 'false',
+                                            rating: isCompleted ? log.performance_rating : undefined,
+                                            duration: isCompleted ? log.duration_real_minutes : undefined
                                         }
                                     })}
                                 >
@@ -236,7 +272,7 @@ export default function AreaActivitiesDetailScreen() {
                                         </Text>
                                         <View style={styles.logMetaRow}>
                                             <MaterialCommunityIcons name="calendar-blank" size={14} color="#94a3b8" />
-                                            <Text style={styles.logMetaText}>{formatDate(log.end_time)}</Text>
+                                            <Text style={styles.logMetaText}>{log.assigned_date ? formatDate(log.assigned_date) : 'Sin fecha'}</Text>
 
                                             {(log.duration_real_minutes || log.activity?.duration_est_minutes) ? (
                                                 <>
@@ -249,14 +285,12 @@ export default function AreaActivitiesDetailScreen() {
                                     </View>
 
                                     {/* Evaluation Badge al lado derecho */}
-                                    {log.performance_rating && (
-                                        <View style={[styles.ratingBadge, { backgroundColor: rStyle.bg }]}>
-                                            <MaterialCommunityIcons name={rStyle.icon as any} size={16} color={rStyle.text} />
-                                            <Text style={[styles.ratingBadgeText, { color: rStyle.text }]}>
-                                                {ratingLabel === 'Lo hizo solo' ? 'Solo' : ratingLabel === 'Con ayuda' ? 'Ayuda' : 'Nada'}
-                                            </Text>
-                                        </View>
-                                    )}
+                                    <View style={[styles.ratingBadge, { backgroundColor: rStyle.bg }]}>
+                                        <MaterialCommunityIcons name={rStyle.icon as any} size={16} color={rStyle.text} />
+                                        <Text style={[styles.ratingBadgeText, { color: rStyle.text }]}>
+                                            {ratingLabel === 'Lo hizo solo' ? 'Solo' : ratingLabel === 'Con ayuda' ? 'Ayuda' : ratingLabel === 'No lo intentó' ? 'Nada' : ratingLabel}
+                                        </Text>
+                                    </View>
                                 </TouchableOpacity>
                             );
                         })

@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
@@ -11,6 +11,9 @@ import { useBaby } from '../context/BabyContext';
 import { calculateBabyAges } from '../lib/babyLogic';
 import { supabase } from '../lib/supabase';
 import { ensureWeeklyPlanExists } from '../lib/weeklyPlanner';
+import * as ImagePicker from 'expo-image-picker';
+const { decode } = require('base-64');
+import * as FileSystem from 'expo-file-system/legacy';
 
 const { width } = Dimensions.get('window');
 
@@ -24,7 +27,29 @@ export default function RegisterBabyScreen() {
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [isPremature, setIsPremature] = useState(false);
     const [weeks, setWeeks] = useState('');
+    const [gender, setGender] = useState<'M' | 'F' | 'O'>('O');
+    const [profileImage, setProfileImage] = useState<string | null>(null);
+    const [acceptedTerms, setAcceptedTerms] = useState(false);
     const [loading, setLoading] = useState(false);
+
+    const pickImage = async () => {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+            Alert.alert('Permiso denegado', 'Necesitamos permisos para acceder a tu galería');
+            return;
+        }
+
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'],
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 0.8,
+        });
+
+        if (!result.canceled && result.assets[0].uri) {
+            setProfileImage(result.assets[0].uri);
+        }
+    };
 
     const handleDateChange = (event: any, selectedDate?: Date) => {
         setShowDatePicker(Platform.OS === 'ios');
@@ -41,7 +66,10 @@ export default function RegisterBabyScreen() {
     };
 
     const handleRegister = async () => {
-        if (!name) return Alert.alert('Error', 'El nombre es obligatorio');
+        if (!name.trim()) {
+            Alert.alert('Error', 'Por favor ingresa el nombre del bebé.');
+            return;
+        }
 
         if (isPremature && (!weeks || isNaN(parseInt(weeks)))) {
             return Alert.alert('Error', 'Indica las semanas de gestación válidas');
@@ -57,9 +85,38 @@ export default function RegisterBabyScreen() {
             return Alert.alert('Límite Alcanzado', 'Actualmente solo puedes registrar un máximo de 2 bebés por cuenta.');
         }
 
+        if (!acceptedTerms) {
+            Alert.alert('Atención', 'Debes aceptar los términos y condiciones de uso para continuar.');
+            return;
+        }
+
         setLoading(true);
         const parsedWeeks = isPremature ? parseInt(weeks) : 40;
         const formattedDate = formatDate(birthDate);
+
+        // Upload Profile Image to Supabase
+        let uploadedImageUrl = null;
+        if (profileImage) {
+            try {
+                // Android compat: use ArrayBuffer instead of Blob from fetch
+                const base64 = await FileSystem.readAsStringAsync(profileImage, { encoding: 'base64' });
+                const arrayBuffer = new Uint8Array(decode(base64).split('').map((c: string) => c.charCodeAt(0))).buffer;
+                const filePath = `babies/${user?.id}/${new Date().getTime()}.jpg`;
+
+                const { data: uploadData, error: uploadError } = await supabase.storage
+                    .from('avatars')
+                    .upload(filePath, arrayBuffer, { contentType: 'image/jpeg' });
+
+                if (uploadError) {
+                    console.error('Error uploading image', uploadError);
+                } else if (uploadData) {
+                    const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
+                    uploadedImageUrl = urlData.publicUrl;
+                }
+            } catch (err) {
+                console.error('Failed processing image:', err);
+            }
+        }
 
         const { data: newBaby, error } = await supabase.from('baby').insert([{
             tutor_id: user?.id,
@@ -67,7 +124,8 @@ export default function RegisterBabyScreen() {
             birth_date: formattedDate,
             weeks_gestation: parsedWeeks,
             is_premature: isPremature,
-            sex: 'O' // Defaulting
+            sex: gender,
+            profile_image_url: uploadedImageUrl
         }]).select('baby_id').single();
 
         if (error || !newBaby) {
@@ -128,6 +186,23 @@ export default function RegisterBabyScreen() {
                         Personalizaremos el plan de estimulación según la edad de tu bebé.
                     </Text>
 
+                    {/* Image Picker */}
+                    <View style={styles.imagePickerContainer}>
+                        <TouchableOpacity style={styles.imagePickerBtn} onPress={pickImage} activeOpacity={0.8}>
+                            {profileImage ? (
+                                <View style={styles.uploadedImagePreview}>
+                                    <MaterialCommunityIcons name="image" size={40} color={Colors.palette.primary} />
+                                    <Text style={{color: Colors.palette.primary, marginTop: 8, fontWeight: 'bold'}}>Foto Añadida</Text>
+                                </View>
+                            ) : (
+                                <View style={styles.placeholderAvatar}>
+                                    <MaterialCommunityIcons name="camera-plus" size={32} color="#94a3b8" />
+                                    <Text style={styles.placeholderText}>Añadir Foto</Text>
+                                </View>
+                            )}
+                        </TouchableOpacity>
+                    </View>
+
                     {/* Form */}
                     <View style={styles.formContainer}>
                         <Text style={styles.label}>Nombre del bebé</Text>
@@ -143,6 +218,24 @@ export default function RegisterBabyScreen() {
                             theme={{ roundness: 12, colors: { primary: Colors.palette.primary, background: Colors.palette.white, text: Colors.palette.textDark } }}
                             right={<TextInput.Icon icon="face-man-profile" color={Colors.palette.primary} />}
                         />
+                        
+                        <Text style={styles.label}>Género</Text>
+                        <View style={styles.genderRow}>
+                            <TouchableOpacity 
+                                style={[styles.genderBtn, gender === 'M' && styles.genderBtnActive]} 
+                                onPress={() => setGender('M')}
+                            >
+                                <MaterialCommunityIcons name="face-man" size={24} color={gender === 'M' ? '#ffffff' : '#94a3b8'} />
+                                <Text style={[styles.genderText, gender === 'M' && styles.genderTextActive]}>Niño</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity 
+                                style={[styles.genderBtn, gender === 'F' && styles.genderBtnActive]} 
+                                onPress={() => setGender('F')}
+                            >
+                                <MaterialCommunityIcons name="face-woman" size={24} color={gender === 'F' ? '#ffffff' : '#94a3b8'} />
+                                <Text style={[styles.genderText, gender === 'F' && styles.genderTextActive]}>Niña</Text>
+                            </TouchableOpacity>
+                        </View>
 
                         <Text style={styles.label}>Fecha de Nacimiento</Text>
 
@@ -232,6 +325,22 @@ export default function RegisterBabyScreen() {
                                 Nota importante: La fecha de nacimiento no podrá ser editada posteriormente ya que es clave para estructurar metodología de estimulación semanal de tu bebé.
                             </Text>
                         </View>
+                        
+                        {/* Terms and Conditions */}
+                        <TouchableOpacity 
+                            style={styles.termsRow} 
+                            onPress={() => setAcceptedTerms(!acceptedTerms)}
+                            activeOpacity={0.8}
+                        >
+                            <MaterialCommunityIcons 
+                                name={acceptedTerms ? "checkbox-marked" : "checkbox-blank-outline"} 
+                                size={24} 
+                                color={acceptedTerms ? Colors.palette.primary : "#94a3b8"} 
+                            />
+                            <Text style={styles.termsText}>
+                                Entiendo que Nido es una guía de estimulación recomendada. Como tutor, asumo la responsabilidad y velaré por la seguridad del bebé al realizar las actividades. Entiendo que la app no se responsabiliza de posibles incidentes.
+                            </Text>
+                        </TouchableOpacity>
                     </View>
 
                     <View style={{ flex: 1 }} />
@@ -269,6 +378,78 @@ const styles = StyleSheet.create({
         paddingHorizontal: 24,
         paddingTop: 20,
         paddingBottom: 40,
+    },
+    imagePickerContainer: {
+        alignItems: 'center',
+        marginBottom: 24,
+    },
+    imagePickerBtn: {
+        width: 100,
+        height: 100,
+        borderRadius: 50,
+        backgroundColor: '#e2e8f0',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 2,
+        borderColor: '#ffffff',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 2,
+        overflow: 'hidden'
+    },
+    placeholderAvatar: {
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    placeholderText: {
+        fontSize: 10,
+        color: '#64748b',
+        marginTop: 4,
+        fontWeight: 'bold'
+    },
+    uploadedImagePreview: {
+        width: '100%',
+        height: '100%',
+        backgroundColor: Colors.palette.primary + '15',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    genderRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginBottom: 20,
+        gap: 12,
+    },
+    genderBtn: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: Colors.palette.white,
+        paddingVertical: 14,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        elevation: 1,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+    },
+    genderBtnActive: {
+        backgroundColor: Colors.palette.primary,
+        borderColor: Colors.palette.primary,
+    },
+    genderText: {
+        marginLeft: 8,
+        fontSize: 15,
+        fontWeight: 'bold',
+        color: '#64748b',
+    },
+    genderTextActive: {
+        color: '#ffffff',
     },
     progressContainer: {
         flexDirection: 'row',
@@ -466,5 +647,22 @@ const styles = StyleSheet.create({
         fontSize: 13,
         color: '#b45309',
         lineHeight: 20
+    },
+    termsRow: {
+        flexDirection: 'row',
+        marginTop: 20,
+        backgroundColor: '#f8fafc',
+        padding: 16,
+        borderRadius: 12,
+        alignItems: 'flex-start',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    termsText: {
+        flex: 1,
+        marginLeft: 12,
+        fontSize: 13,
+        color: '#475569',
+        lineHeight: 18,
     }
 });

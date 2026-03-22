@@ -1,9 +1,10 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { Dimensions, Image, Modal, ActivityIndicator as RNActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { AppState, Dimensions, Image, Modal, ActivityIndicator as RNActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { ActivityIndicator, Text } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useKeepAwake } from 'expo-keep-awake';
 import { supabase } from '../lib/supabase';
 
 const { width } = Dimensions.get('window');
@@ -19,6 +20,7 @@ const RATING_UI = {
 };
 
 export default function ActivityExecutionScreen() {
+    useKeepAwake(); // Prevents screen from locking while on this screen
     const { activity_id, baby_id, readOnly, rating, duration } = useLocalSearchParams<{ activity_id: string; baby_id: string; readOnly?: string; rating?: string; duration?: string }>();
     const router = useRouter();
 
@@ -52,6 +54,18 @@ export default function ActivityExecutionScreen() {
         };
         fetchActivity();
     }, [activity_id]);
+
+    useEffect(() => {
+        const subscription = AppState.addEventListener('change', (nextAppState) => {
+            if (nextAppState.match(/inactive|background/) && timerActive) {
+                // Pause timer when app goes to background
+                setTimerActive(false);
+            }
+        });
+        return () => {
+            subscription.remove();
+        };
+    }, [timerActive]);
 
     useEffect(() => {
         let interval: ReturnType<typeof setInterval>;
@@ -192,7 +206,7 @@ export default function ActivityExecutionScreen() {
                 {/* Hero Image Section */}
                 <View style={styles.heroContainer}>
                     <Image
-                        source={require('../assets/images/baby_activity.png')}
+                        source={activity?.image_url ? { uri: activity.image_url } : require('../assets/images/baby_activity.png')}
                         style={styles.heroImage}
                         resizeMode="cover"
                         defaultSource={require('../assets/images/baby_activity.png')}

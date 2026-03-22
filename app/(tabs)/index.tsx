@@ -9,6 +9,9 @@ import { useBaby } from '../../context/BabyContext';
 import { calculateBabyAges } from '../../lib/babyLogic';
 import { supabase } from '../../lib/supabase';
 import { ensureWeeklyPlanExists } from '../../lib/weeklyPlanner';
+import * as ImagePicker from 'expo-image-picker';
+const { decode } = require('base-64');
+import * as FileSystem from 'expo-file-system/legacy';
 
 const { width } = Dimensions.get('window');
 
@@ -50,7 +53,7 @@ const getExactAgeString = (birthDateString: string) => {
 
 export default function HomeScreen() {
   const { user, loading: authLoading } = useAuth();
-  const { babies, selectedBaby, setSelectedBaby, loadingBabies, isSwitchingBaby } = useBaby();
+  const { babies, selectedBaby, setSelectedBaby, loadingBabies, isSwitchingBaby, refreshBabies } = useBaby();
   const router = useRouter();
 
   const [tutorName, setTutorName] = useState('Tutor');
@@ -60,6 +63,8 @@ export default function HomeScreen() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [editTutorName, setEditTutorName] = useState('');
   const [editBabyName, setEditBabyName] = useState('');
+  const [editBabyGender, setEditBabyGender] = useState<'M' | 'F' | 'O'>('O');
+  const [editBabyImage, setEditBabyImage] = useState<string | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
 
   const [dailyProgress, setDailyProgress] = useState({ completed: 0, total: 0 });
@@ -215,7 +220,28 @@ export default function HomeScreen() {
   const handleEditProfile = () => {
     setEditTutorName(tutorName);
     setEditBabyName(selectedBaby ? selectedBaby.name : '');
+    setEditBabyGender(selectedBaby?.gender as 'M' | 'F' | 'O' || 'O');
+    setEditBabyImage(null); // Reset pending image upload
     setShowSettingsModal(true);
+  };
+
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permiso denegado', 'Necesitamos permisos para acceder a tu galería');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets[0].uri) {
+      setEditBabyImage(result.assets[0].uri);
+    }
   };
 
   const handleSaveSettings = async () => {
@@ -235,14 +261,49 @@ export default function HomeScreen() {
       }
 
       // Update Baby
-      if (editBabyName && selectedBaby && editBabyName !== selectedBaby.name) {
-        const { error: bError } = await supabase
-          .from('baby')
-          .update({ name: editBabyName })
-          .eq('baby_id', selectedBaby.baby_id);
-        if (!bError) {
-          // Optimistic UI update, might be slightly out of sync until BabyContext refreshes but good enough for UX
-          setSelectedBaby({ ...selectedBaby, name: editBabyName });
+      if (selectedBaby) {
+        let uploadedImageUrl = undefined; // undefined keeps it out of update object if null
+
+        // 1. Subir nueva foto si se seleccionó una
+        if (editBabyImage) {
+          try {
+            // Android compat: use ArrayBuffer instead of Blob from fetch
+            const base64 = await FileSystem.readAsStringAsync(editBabyImage, { encoding: 'base64' });
+            const arrayBuffer = new Uint8Array(decode(base64).split('').map((c: string) => c.charCodeAt(0))).buffer;
+            const filePath = `babies/${user?.id}/${new Date().getTime()}.jpg`;
+
+            const { data: uploadData, error: uploadError } = await supabase.storage
+              .from('avatars')
+              .upload(filePath, arrayBuffer, { contentType: 'image/jpeg' });
+
+            if (uploadError) {
+              console.error('Error uploading image in settings:', uploadError);
+            } else if (uploadData) {
+              const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
+              uploadedImageUrl = urlData.publicUrl;
+            }
+          } catch (err) {
+            console.error('Failed processing image blob:', err);
+          }
+        }
+
+        // 2. Actualizar registro en DB
+        const babyUpdates: any = {};
+        if (editBabyName && editBabyName !== selectedBaby.name) babyUpdates.name = editBabyName;
+        if (editBabyGender !== selectedBaby.gender) babyUpdates.gender = editBabyGender;
+        if (uploadedImageUrl) babyUpdates.profile_image_url = `${uploadedImageUrl}?v=${Date.now()}`;
+
+        if (Object.keys(babyUpdates).length > 0) {
+          const { error: bError } = await supabase
+            .from('baby')
+            .update(babyUpdates)
+            .eq('baby_id', selectedBaby.baby_id);
+
+          if (!bError) {
+            // Optimistic UI update and refresh to ensure everything syncs well
+            setSelectedBaby({ ...selectedBaby, ...babyUpdates });
+            await refreshBabies();
+          }
         }
       }
 
@@ -252,6 +313,38 @@ export default function HomeScreen() {
     } finally {
       setSavingSettings(false);
     }
+  };
+
+  const handleDeleteBaby = () => {
+    if (!selectedBaby) return;
+    Alert.alert(
+      "Eliminar Perfil de Bebé",
+      "⚠️ ¡Atención! Esta acción es irreversible.\nSe eliminará permanentemente perfil, nombre y TODO el progreso registrado en Nido. ¿Estás seguro/a de que deseas eliminar este perfil?",
+      [
+        { text: "Cancelar", style: "cancel" },
+        { 
+          text: "Sí, Eliminar", 
+          style: "destructive",
+          onPress: async () => {
+            setSavingSettings(true);
+            try {
+              const { error } = await supabase.from('baby').delete().eq('baby_id', selectedBaby.baby_id);
+              if (!error) {
+                setShowSettingsModal(false);
+                refreshBabies();
+              } else {
+                Alert.alert("Error", "No se pudo eliminar el perfil en este momento.");
+              }
+            } catch (err) {
+              console.error(err);
+              Alert.alert('Error', 'Hubo un inconveniente al conectar con el servidor.');
+            } finally {
+              setSavingSettings(false);
+            }
+          }
+        }
+      ]
+    );
   };
 
   if (authLoading || loadingBabies || loadingProgress || isSwitchingBaby) {
@@ -285,7 +378,7 @@ export default function HomeScreen() {
           <View style={[styles.profileRow, { padding: 0 }]}>
             <TouchableOpacity style={styles.avatarContainer} onPress={() => setShowBabyDetailsModal(true)}>
               <Image
-                source={require('../../assets/images/profile_baby.png')}
+                source={selectedBaby?.profile_image_url ? { uri: selectedBaby.profile_image_url } : require('../../assets/images/profile_baby.png')}
                 style={styles.avatarImage}
                 defaultSource={require('../../assets/images/profile_baby.png')}
               />
@@ -303,9 +396,6 @@ export default function HomeScreen() {
           </View>
 
           <View style={styles.headerRight}>
-            <TouchableOpacity onPress={() => setShowBabySelector(true)} style={styles.iconButton}>
-              <MaterialCommunityIcons name="face-man-profile" size={26} color="#0f172a" />
-            </TouchableOpacity>
             <TouchableOpacity onPress={handleEditProfile} style={[styles.iconButton, { marginLeft: 10 }]}>
               <MaterialCommunityIcons name="cog" size={26} color="#0f172a" />
             </TouchableOpacity>
@@ -330,6 +420,19 @@ export default function HomeScreen() {
 
               {selectedBaby && (
                 <View style={{ width: '100%', marginBottom: 24 }}>
+                  <View style={{ alignItems: 'center', marginBottom: 16 }}>
+                    <TouchableOpacity onPress={pickImage} activeOpacity={0.8}>
+                      <Image
+                        source={editBabyImage ? { uri: editBabyImage } : (selectedBaby?.profile_image_url ? { uri: selectedBaby.profile_image_url } : require('../../assets/images/profile_baby.png'))}
+                        style={{ width: 80, height: 80, borderRadius: 40, borderWidth: 2, borderColor: '#3b82f6' }}
+                      />
+                      <View style={{ position: 'absolute', bottom: 0, right: 0, backgroundColor: '#3b82f6', borderRadius: 12, padding: 4 }}>
+                        <MaterialCommunityIcons name="camera" size={16} color="#ffffff" />
+                      </View>
+                    </TouchableOpacity>
+                    <Text style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>Cambiar foto</Text>
+                  </View>
+
                   <Text style={{ fontSize: 13, color: '#64748b', marginBottom: 6, fontWeight: 'bold', marginLeft: 4 }}>Nombre del Bebé</Text>
                   <TextInput
                     style={styles.settingsInput}
@@ -337,6 +440,22 @@ export default function HomeScreen() {
                     onChangeText={setEditBabyName}
                     placeholder="Nombre del Bebé"
                   />
+
+                  <Text style={{ fontSize: 13, color: '#64748b', marginBottom: 6, marginTop: 12, fontWeight: 'bold', marginLeft: 4 }}>Género</Text>
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <TouchableOpacity 
+                      style={[styles.genderBtn, editBabyGender === 'M' && styles.genderBtnActive]} 
+                      onPress={() => setEditBabyGender('M')}
+                    >
+                      <Text style={[styles.genderText, editBabyGender === 'M' && styles.genderTextActive]}>Niño</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={[styles.genderBtn, editBabyGender === 'F' && styles.genderBtnActive]} 
+                      onPress={() => setEditBabyGender('F')}
+                    >
+                      <Text style={[styles.genderText, editBabyGender === 'F' && styles.genderTextActive]}>Niña</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               )}
 
@@ -348,15 +467,27 @@ export default function HomeScreen() {
                 )}
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={{ marginTop: 20, padding: 10 }}
-                onPress={() => {
-                  setShowSettingsModal(false);
-                  supabase.auth.signOut();
-                }}
-              >
-                <Text style={{ color: '#ef4444', fontWeight: 'bold' }}>Cerrar Sesión de la App</Text>
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 20 }}>
+                {selectedBaby && (
+                  <TouchableOpacity
+                    style={{ padding: 10, flex: 1, alignItems: 'center' }}
+                    onPress={handleDeleteBaby}
+                    disabled={savingSettings}
+                  >
+                    <Text style={{ color: '#ef4444', fontWeight: 'bold' }}>Eliminar Bebé</Text>
+                  </TouchableOpacity>
+                )}
+
+                <TouchableOpacity
+                  style={{ padding: 10, flex: 1, alignItems: 'center' }}
+                  onPress={() => {
+                    setShowSettingsModal(false);
+                    supabase.auth.signOut();
+                  }}
+                >
+                  <Text style={{ color: '#64748b', fontWeight: 'bold' }}>Cerrar Sesión</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </TouchableOpacity>
         </Modal>
@@ -368,7 +499,7 @@ export default function HomeScreen() {
               <View style={styles.modalContent}>
                 <View style={{ alignItems: 'center', marginBottom: 16 }}>
                   <Image
-                    source={require('../../assets/images/profile_baby.png')}
+                    source={selectedBaby?.profile_image_url ? { uri: selectedBaby.profile_image_url } : require('../../assets/images/profile_baby.png')}
                     style={{ width: 80, height: 80, borderRadius: 40, marginBottom: 12 }}
                   />
                   <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#0f172a' }}>{selectedBaby.name}</Text>
@@ -879,5 +1010,34 @@ const styles = StyleSheet.create({
     color: '#0f172a',
     borderWidth: 1,
     borderColor: '#e2e8f0'
+  },
+  genderBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+  },
+  genderBtnActive: {
+    backgroundColor: '#3b82f6',
+    borderColor: '#3b82f6',
+  },
+  genderText: {
+    marginLeft: 8,
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: '#64748b',
+  },
+  genderTextActive: {
+    color: '#ffffff',
   }
 });

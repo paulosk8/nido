@@ -10,6 +10,8 @@ interface Baby {
     weeks_gestation: number;
     is_premature: boolean;
     sex: string;
+    gender?: string;
+    profile_image_url?: string | null;
     created_at: string;
 }
 

@@ -1,7 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { ActivityIndicator, Text } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../lib/supabase';
@@ -10,27 +10,90 @@ export default function ProgressDashboardScreen() {
     const { baby_id } = useLocalSearchParams<{ baby_id: string }>();
     const [progressData, setProgressData] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [timeFrame, setTimeFrame] = useState<'week' | 'month'>('week');
 
     useEffect(() => {
         const fetchProgress = async () => {
             if (!baby_id) return;
+            setLoading(true);
 
-            const { data, error } = await supabase
-                .from('baby_progress_summary')
-                .select(`
-                    *,
-                    stimulation_area ( name, color_hex ),
-                    age_range ( name )
-                `)
-                .eq('baby_id', baby_id);
+            const offset = new Date().getTimezoneOffset();
+            const now = new Date();
+            let startStr = '';
+            let endStr = '';
 
-            if (!error && data) {
-                setProgressData(data);
+            if (timeFrame === 'week') {
+                const day = now.getDay();
+                const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+                const startOfWeek = new Date(now);
+                startOfWeek.setDate(diff);
+                startOfWeek.setHours(0, 0, 0, 0);
+
+                const endOfWeek = new Date(startOfWeek);
+                endOfWeek.setDate(endOfWeek.getDate() + 6);
+
+                startStr = new Date(startOfWeek.getTime() - (offset * 60 * 1000)).toISOString().split('T')[0];
+                endStr = new Date(endOfWeek.getTime() - (offset * 60 * 1000)).toISOString().split('T')[0];
+            } else {
+                const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+                const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+                startStr = new Date(startOfMonth.getTime() - (offset * 60 * 1000)).toISOString().split('T')[0];
+                endStr = new Date(endOfMonth.getTime() - (offset * 60 * 1000)).toISOString().split('T')[0];
+            }
+
+            const { data: planData } = await supabase
+                .from('planned_activity')
+                .select('activity_id')
+                .eq('baby_id', baby_id)
+                .gte('assigned_date', startStr)
+                .lte('assigned_date', endStr);
+
+            const { data: areasData } = await supabase.from('stimulation_area').select('area_id, name');
+
+            if (planData && areasData) {
+                const activityIds = planData.map(p => p.activity_id);
+                let activities: any[] = [];
+                if (activityIds.length > 0) {
+                    const { data: actData } = await supabase
+                        .from('activity')
+                        .select('activity_id, area_id')
+                        .in('activity_id', activityIds);
+                    activities = actData || [];
+                }
+
+                let completedLogs: Set<string> = new Set();
+                if (activityIds.length > 0) {
+                    const { data: logData } = await supabase
+                        .from('activity_log')
+                        .select('activity_id')
+                        .eq('baby_id', baby_id)
+                        .in('activity_id', activityIds)
+                        .not('end_time', 'is', null);
+                    if (logData) {
+                        completedLogs = new Set(logData.map(l => l.activity_id));
+                    }
+                }
+
+                const statsByArea = areasData.map(area => {
+                    const areaActs = activities.filter(a => a.area_id === area.area_id);
+                    const total = areaActs.length;
+                    const completed = areaActs.filter(a => completedLogs.has(a.activity_id)).length;
+                    const pending = total - completed;
+                    return {
+                        area_name: area.name,
+                        total,
+                        completed,
+                        pending,
+                        percentage: total > 0 ? Math.round((completed / total) * 100) : 0
+                    };
+                });
+                setProgressData(statsByArea);
             }
             setLoading(false);
         };
         fetchProgress();
-    }, [baby_id]);
+    }, [baby_id, timeFrame]);
 
     if (loading) {
         return (
@@ -58,15 +121,32 @@ export default function ProgressDashboardScreen() {
                     <Text style={styles.viewReportText}>Reporte Completo</Text>
                 </View>
 
+                {/* Toggles */}
+                <View style={styles.toggleContainer}>
+                    <TouchableOpacity 
+                        style={[styles.toggleBtn, timeFrame === 'week' && styles.toggleBtnActive]} 
+                        onPress={() => setTimeFrame('week')}
+                    >
+                        <MaterialCommunityIcons name="calendar-week" size={18} color={timeFrame === 'week' ? '#fff' : '#64748b'} />
+                        <Text style={[styles.toggleText, timeFrame === 'week' && styles.toggleTextActive]}>Esta Semana</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                        style={[styles.toggleBtn, timeFrame === 'month' && styles.toggleBtnActive]} 
+                        onPress={() => setTimeFrame('month')}
+                    >
+                        <MaterialCommunityIcons name="calendar-month" size={18} color={timeFrame === 'month' ? '#fff' : '#64748b'} />
+                        <Text style={[styles.toggleText, timeFrame === 'month' && styles.toggleTextActive]}>Este Mes</Text>
+                    </TouchableOpacity>
+                </View>
+
                 {progressData.length === 0 ? (
                     <Text style={styles.emptyText}>Aún no hay suficientes datos para mostrar métricas. ¡Realiza más actividades!</Text>
                 ) : (
                     <View style={styles.gridContainer}>
                         {progressData.map((prog, index) => {
-                            const areaName = prog.stimulation_area?.name || 'General';
+                            const areaName = prog.area_name || 'General';
                             const styleData = getAreaStyle(areaName);
-                            // Simulating percentage based on score_average (0-10 mapped to 0-100)
-                            const percentage = Math.round((prog.score_average || 0) * 10);
+                            const percentage = prog.percentage || 0;
 
                             return (
                                 <View key={index} style={[styles.gridCard, { backgroundColor: styleData.bg }]}>
@@ -79,9 +159,11 @@ export default function ProgressDashboardScreen() {
 
                                     <View style={styles.cardBody}>
                                         <Text style={[styles.areaTitle, { color: styleData.color }]}>{areaName}</Text>
-                                        <Text style={[styles.areaSubtitle, { color: styleData.color, opacity: 0.8 }]}>
-                                            {prog.activities_completed} acts.
-                                        </Text>
+                                        <View style={styles.statsRow}>
+                                            <Text style={[styles.statText, { color: styleData.color }]}>Total: {prog.total}</Text>
+                                            <Text style={[styles.statText, { color: styleData.color }]}>Hechas: {prog.completed}</Text>
+                                            <Text style={[styles.statText, { color: styleData.color }]}>Pend.: {prog.pending}</Text>
+                                        </View>
                                     </View>
                                 </View>
                             );
@@ -141,9 +223,47 @@ const styles = StyleSheet.create({
     areaTitle: {
         fontWeight: 'bold',
         fontSize: 16,
-        marginBottom: 4
+        marginBottom: 8
     },
-    areaSubtitle: {
-        fontSize: 13,
+    statsRow: {
+        flexDirection: 'column',
+        gap: 2
+    },
+    statText: {
+        fontSize: 12,
+        opacity: 0.9,
+        fontWeight: '500'
+    },
+    toggleContainer: {
+        flexDirection: 'row',
+        backgroundColor: '#e2e8f0',
+        borderRadius: 20,
+        padding: 4,
+        marginBottom: 20
+    },
+    toggleBtn: {
+        flex: 1,
+        flexDirection: 'row',
+        paddingVertical: 10,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderRadius: 16
+    },
+    toggleBtnActive: {
+        backgroundColor: '#3b82f6',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 2
+    },
+    toggleText: {
+        marginLeft: 6,
+        fontWeight: 'bold',
+        color: '#64748b',
+        fontSize: 13
+    },
+    toggleTextActive: {
+        color: '#ffffff'
     }
 });
