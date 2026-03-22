@@ -24,19 +24,14 @@ export default function TabLayout() {
         tabBarShowLabel: true, // Restore Spanish text
         headerShown: useClientOnlyValue(false, true),
         tabBarStyle: {
-          position: 'absolute',
-          bottom: 25,
-          left: 20,
-          right: 20,
-          elevation: 5,
           backgroundColor: '#ffffff',
-          borderRadius: 40,
-          height: 70,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.1,
-          shadowRadius: 10,
-          borderTopWidth: 0, // remove default borderline
+          height: 65,
+          borderTopWidth: 1,
+          borderTopColor: '#f1f5f9',
+          paddingBottom: 8,
+          paddingTop: 8,
+          elevation: 0,
+          shadowOpacity: 0
         }
       }}>
       <Tabs.Screen

@@ -85,11 +85,15 @@ export default function AreaReportScreen() {
                     .in('activity_id', activityIds);
 
                 if (actData) {
-                    const formatted = actData.map((act: any) => ({
-                        ...act,
-                        category: act.stimulation_area?.name || 'General',
-                        icon_name: act.stimulation_area?.icon_name || 'star'
-                    }));
+                    const formatted = actData.map((act: any) => {
+                        const plan = planData.find(p => p.activity_id === act.activity_id);
+                        return {
+                            ...act,
+                            assigned_date: plan?.assigned_date,
+                            category: act.stimulation_area?.name || 'General',
+                            icon_name: act.stimulation_area?.icon_name || 'star'
+                        };
+                    });
 
                     // Filter down ONLY to the exact matching category expected by the area parameter
                     // Use a more robust substring check, taking first 5 chars handles "Cognitivo" vs "Cognitiva" and "Motor" vs "Motricidad" etc
@@ -161,6 +165,11 @@ export default function AreaReportScreen() {
         );
     };
 
+    const formatDate = (dateString: string) => {
+        const d = new Date(dateString);
+        return d.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' });
+    };
+
     const renderActivity = ({ item }: { item: any }) => {
         const isCompleted = completedIds.has(item.activity_id);
 
@@ -171,7 +180,7 @@ export default function AreaReportScreen() {
                         {item.title}
                     </Text>
                     <Text style={[styles.activitySubtitle, isCompleted && { color: '#cbd5e1' }]}>
-                        {item.category}
+                        {item.category} {item.assigned_date ? ` • ${formatDate(item.assigned_date)}` : ''}
                     </Text>
                 </View>
 

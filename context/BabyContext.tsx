@@ -40,6 +40,15 @@ export const BabyProvider = ({ children }: { children: React.ReactNode }) => {
     const [loadingBabies, setLoadingBabies] = useState(true);
     const [isSwitchingBaby, setIsSwitchingBaby] = useState(false);
 
+    // Synchronously catch user changes to avoid race conditions with layout redirects
+    const [lastUserId, setLastUserId] = useState<string | undefined>(undefined);
+    if (user?.id !== lastUserId) {
+        setLastUserId(user?.id);
+        if (!loadingBabies) {
+            setLoadingBabies(true);
+        }
+    }
+
     // Wrapper to add loading state when manually switching baby
     const handleSetSelectedBaby = (baby: Baby) => {
         setIsSwitchingBaby(true);
@@ -88,7 +97,6 @@ export const BabyProvider = ({ children }: { children: React.ReactNode }) => {
 
     useEffect(() => {
         if (!authLoading) {
-            setLoadingBabies(true);
             fetchBabies();
         }
     }, [user, authLoading]);

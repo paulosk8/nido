@@ -91,6 +91,28 @@ export const ensureWeeklyPlanExists = async (baby_id: string, range_id: string, 
 
     const babyMonthsAge = ageRangeData?.min_months || 0;
 
+    // Fetch baby creation date to avoid planning activities before they existed
+    const { data: babyData, error: babyError } = await supabase
+        .from('baby')
+        .select('created_at')
+        .eq('baby_id', baby_id)
+        .single();
+    
+    let babyCreatedAt = new Date(0);
+    if (babyData && babyData.created_at) {
+        babyCreatedAt = new Date(babyData.created_at);
+        
+        // Prevent UTC timezone bleeding where late night UTC-5 registers as "tomorrow" in UTC
+        const todayMidnight = new Date();
+        todayMidnight.setHours(0, 0, 0, 0);
+        if (babyCreatedAt > todayMidnight) {
+            babyCreatedAt = todayMidnight;
+        }
+        
+        babyCreatedAt.setHours(0, 0, 0, 0); // Normalize to midnight for accurate day comparison
+    }
+
+
     // 2. Fetch ALL available activities for the child's age
     const { data: activities, error: actError } = await supabase
         .from('activity')
@@ -160,9 +182,19 @@ export const ensureWeeklyPlanExists = async (baby_id: string, range_id: string, 
     for (let i = 0; i < 7; i++) {
         const currentDate = new Date(startOfWeek);
         currentDate.setDate(currentDate.getDate() + i);
+        
+        const compareDate = new Date(currentDate);
+        compareDate.setHours(0, 0, 0, 0);
+
         const dayOfWeek = currentDate.getDay();
 
         if (REST_DAYS.includes(dayOfWeek)) continue; // Skip Tuesdays and Sundays
+
+        if (compareDate < babyCreatedAt) {
+            // Still increment the rotation index so the methodology remains tied to the day of week
+            activeDayIndex++;
+            continue;
+        }
 
         // Get the required methodological areas for today (e.g ['Motor', 'Lenguaje'])
         const todaysTargetAreas = DAILY_AREA_ROTATION[activeDayIndex % DAILY_AREA_ROTATION.length];

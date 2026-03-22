@@ -12,6 +12,7 @@ import { ensureWeeklyPlanExists } from '../../lib/weeklyPlanner';
 import * as ImagePicker from 'expo-image-picker';
 const { decode } = require('base-64');
 import * as FileSystem from 'expo-file-system/legacy';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
 
@@ -67,6 +68,11 @@ export default function HomeScreen() {
   const [editBabyImage, setEditBabyImage] = useState<string | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
 
+  // MILESTONE MODALS
+  const [showBirthdayModal, setShowBirthdayModal] = useState(false);
+  const [showRangeUpgradeModal, setShowRangeUpgradeModal] = useState(false);
+  const [newRangeName, setNewRangeName] = useState('');
+
   const [dailyProgress, setDailyProgress] = useState({ completed: 0, total: 0 });
   const [weeklyAreaProgress, setWeeklyAreaProgress] = useState({
     Motor: { completed: 0, total: 0 },
@@ -106,7 +112,7 @@ export default function HomeScreen() {
         // Get range for baby
         let { data: rangeData } = await supabase
           .from('age_range')
-          .select('range_id')
+          .select('range_id, name')
           .lte('min_months', targetAgeInMonths)
           .gte('max_months', targetAgeInMonths)
           .limit(1);
@@ -114,7 +120,7 @@ export default function HomeScreen() {
         if (!rangeData || rangeData.length === 0) {
           const { data: fallbackRange } = await supabase
             .from('age_range')
-            .select('range_id')
+            .select('range_id, name')
             .order('min_months', { ascending: true })
             .limit(1);
           rangeData = fallbackRange;
@@ -122,11 +128,38 @@ export default function HomeScreen() {
 
         if (rangeData && rangeData.length > 0) {
           const activeRangeId = rangeData[0].range_id;
+          const rangeName = rangeData[0].name || 'Nueva Etapa';
+
           await ensureWeeklyPlanExists(selectedBaby.baby_id, activeRangeId, isPremature);
 
           const offset = new Date().getTimezoneOffset();
           const now = new Date();
           const todayStr = new Date(now.getTime() - (offset * 60 * 1000)).toISOString().split('T')[0];
+
+          // --- MILESTONES CHECK ---
+          // 1. Birthday Check
+          if (selectedBaby.birth_date && todayStr.substring(5, 10) === selectedBaby.birth_date.substring(5, 10)) {
+            const currentYear = todayStr.split('-')[0];
+            const bdKey = `@bd_celebrated_${selectedBaby.baby_id}_${currentYear}`;
+            const celebrated = await AsyncStorage.getItem(bdKey);
+            if (!celebrated) {
+              setShowBirthdayModal(true);
+              await AsyncStorage.setItem(bdKey, 'true');
+            }
+          }
+
+          // 2. Range Upgrade Check
+          const lastRangeKey = `@last_range_${selectedBaby.baby_id}`;
+          const lastRangeId = await AsyncStorage.getItem(lastRangeKey);
+          
+          if (lastRangeId && lastRangeId !== activeRangeId) {
+             setNewRangeName(rangeName);
+             setShowRangeUpgradeModal(true);
+          }
+          if (lastRangeId !== activeRangeId) {
+             await AsyncStorage.setItem(lastRangeKey, activeRangeId);
+          }
+          // ------------------------
 
           const startOfWeek = new Date(now);
           const day = startOfWeek.getDay();
@@ -492,6 +525,48 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </Modal>
 
+        {/* BIRTHDAY MODAL */}
+        <Modal visible={showBirthdayModal} transparent={true} animationType="fade" onRequestClose={() => setShowBirthdayModal(false)}>
+          <TouchableOpacity style={styles.modalOverlay} onPress={() => setShowBirthdayModal(false)} activeOpacity={1}>
+            <View style={[styles.modalContent, { alignItems: 'center', padding: 30 }]}>
+              <MaterialCommunityIcons name="cake-variant" size={64} color="#f43f5e" style={{ marginBottom: 16 }} />
+              <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#0f172a', textAlign: 'center', marginBottom: 12 }}>
+                ¡Feliz Cumpleaños, {selectedBaby?.name}! 🎉
+              </Text>
+              <Text style={{ fontSize: 16, color: '#64748b', textAlign: 'center', marginBottom: 24, lineHeight: 24 }}>
+                Felicidades por todo el esfuerzo y amor que dedicas a su desarrollo. ¡Disfruten mucho este día tan especial!
+              </Text>
+              <TouchableOpacity
+                style={[styles.continueBtn, { width: '100%', backgroundColor: '#f43f5e' }]}
+                onPress={() => setShowBirthdayModal(false)}
+              >
+                <Text style={styles.continueBtnText}>¡A Celebrar!</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+
+        {/* RANGE UPGRADE MODAL */}
+        <Modal visible={showRangeUpgradeModal} transparent={true} animationType="slide" onRequestClose={() => setShowRangeUpgradeModal(false)}>
+          <TouchableOpacity style={styles.modalOverlay} onPress={() => setShowRangeUpgradeModal(false)} activeOpacity={1}>
+            <View style={[styles.modalContent, { alignItems: 'center', padding: 30 }]}>
+              <MaterialCommunityIcons name="star-shooting" size={64} color="#f59e0b" style={{ marginBottom: 16 }} />
+              <Text style={{ fontSize: 24, fontWeight: 'bold', color: '#0f172a', textAlign: 'center', marginBottom: 12 }}>
+                ¡Nueva Etapa Alcanzada! 🌟
+              </Text>
+              <Text style={{ fontSize: 16, color: '#64748b', textAlign: 'center', marginBottom: 24, lineHeight: 24 }}>
+                {selectedBaby?.name} ha crecido y acaba de entrar a la etapa: "{newRangeName}". Las nuevas actividades se reflejarán en tu próxima actualización de plan semanal. ¡Felicidades por este gran avance!
+              </Text>
+              <TouchableOpacity
+                style={[styles.continueBtn, { width: '100%', backgroundColor: '#f59e0b' }]}
+                onPress={() => setShowRangeUpgradeModal(false)}
+              >
+                <Text style={styles.continueBtnText}>¡Genial!</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+
         {/* BABY DETAILS MODAL */}
         {selectedBaby && (
           <Modal visible={showBabyDetailsModal} transparent={true} animationType="fade" onRequestClose={() => setShowBabyDetailsModal(false)}>
@@ -584,30 +659,42 @@ export default function HomeScreen() {
 
             <Text style={styles.levelTitle}>Progreso de Hoy</Text>
 
-            <View style={styles.illustrationRow}>
-              <Image
-                source={require('../../assets/images/baby_activity.png')}
-                style={styles.babyActivityImage}
-                resizeMode="contain"
-              />
+            {dailyProgress.total > 0 ? (
+              <>
+                <View style={styles.illustrationRow}>
+                  <Image
+                    source={require('../../assets/images/baby_activity.png')}
+                    style={styles.babyActivityImage}
+                    resizeMode="contain"
+                  />
 
-              <View style={styles.nextStepBox}>
-                <Text style={styles.nextStepLabel}>Competado</Text>
-                <Text style={styles.nextStepValue}>{dailyPercentage}%</Text>
-                <View style={styles.progressBarBg}>
-                  <View style={[styles.progressBarFill, { width: `${dailyPercentage}%` }]} />
+                  <View style={styles.nextStepBox}>
+                    <Text style={styles.nextStepLabel}>Competado</Text>
+                    <Text style={styles.nextStepValue}>{dailyPercentage}%</Text>
+                    <View style={styles.progressBarBg}>
+                      <View style={[styles.progressBarFill, { width: `${dailyPercentage}%` }]} />
+                    </View>
+                  </View>
                 </View>
-              </View>
-            </View>
 
-            <TouchableOpacity
-              style={styles.continueBtn}
-              onPress={() => router.push({ pathname: '/daily-plan', params: { baby_id: selectedBaby.baby_id } })}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.continueBtnText}>Ver Actividades de Hoy</Text>
-              <MaterialCommunityIcons name="calendar-check" size={20} color="#fff" />
-            </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.continueBtn}
+                  onPress={() => router.push({ pathname: '/daily-plan', params: { baby_id: selectedBaby.baby_id } })}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.continueBtnText}>Ver Actividades de Hoy</Text>
+                  <MaterialCommunityIcons name="calendar-check" size={20} color="#fff" />
+                </TouchableOpacity>
+              </>
+            ) : (
+              <View style={{ alignItems: 'center', marginVertical: 20 }}>
+                <MaterialCommunityIcons name="sleep" size={60} color="#94a3b8" />
+                <Text style={{ fontSize: 18, color: '#0f172a', fontWeight: 'bold', marginTop: 12 }}>¡Día de Descanso!</Text>
+                <Text style={{ fontSize: 14, color: '#64748b', textAlign: 'center', marginTop: 8, paddingHorizontal: 20 }}>
+                  Hoy no hay actividades programadas. Es importante dejar que tu bebé asimile lo aprendido y descanse.
+                </Text>
+              </View>
+            )}
           </View>
         ) : (
           <View style={styles.emptyState}>
@@ -680,7 +767,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     padding: 20,
     backgroundColor: '#F8F9FB',
-    paddingBottom: 110
+    paddingBottom: 20
   },
   center: {
     flex: 1,
