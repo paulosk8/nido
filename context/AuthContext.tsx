@@ -52,43 +52,50 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     // Helper para sincronizar el perfil del tutor y re-vincular bebés si es necesario
     const syncProfile = async (sessionUser: User) => {
-      try {
-        const { error } = await supabase.from('tutor').upsert([
-          {
-            tutor_id: sessionUser.id,
-            email: sessionUser.email,
-            full_name: sessionUser.user_metadata?.full_name || sessionUser.email?.split('@')[0] || 'Tutor'
-          }
-        ], { onConflict: 'tutor_id' });
-
-        if (error && error.code === '23505' && error.message.includes('tutor_email_key')) {
-          const { data: oldTutor } = await supabase.from('tutor').select('tutor_id').eq('email', sessionUser.email).single();
-          if (oldTutor && oldTutor.tutor_id !== sessionUser.id) {
-            console.log('Sync: Re-vinculando bebés de cuenta huérfana...');
-            await supabase.from('baby').update({ tutor_id: sessionUser.id }).eq('tutor_id', oldTutor.tutor_id);
-            await supabase.from('tutor').delete().eq('tutor_id', oldTutor.tutor_id);
-            await supabase.from('tutor').upsert([{
+      const performSync = async () => {
+        try {
+          const { error } = await supabase.from('tutor').upsert([
+            {
               tutor_id: sessionUser.id,
               email: sessionUser.email,
               full_name: sessionUser.user_metadata?.full_name || sessionUser.email?.split('@')[0] || 'Tutor'
-            }]);
+            }
+          ], { onConflict: 'tutor_id' });
+
+          if (error && error.code === '23505' && error.message.includes('tutor_email_key')) {
+            const { data: oldTutor } = await supabase.from('tutor').select('tutor_id').eq('email', sessionUser.email).single();
+            if (oldTutor && oldTutor.tutor_id !== sessionUser.id) {
+              await supabase.from('baby').update({ tutor_id: sessionUser.id }).eq('tutor_id', oldTutor.tutor_id);
+              await supabase.from('tutor').delete().eq('tutor_id', oldTutor.tutor_id);
+              await supabase.from('tutor').upsert([{
+                tutor_id: sessionUser.id,
+                email: sessionUser.email,
+                full_name: sessionUser.user_metadata?.full_name || sessionUser.email?.split('@')[0] || 'Tutor'
+              }]);
+            }
           }
+        } catch (err) {
+          console.error('Error en syncProfile async:', err);
         }
-      } catch (err) {
-        console.error('Error en syncProfile:', err);
-      }
+      };
+
+      // Si la sincronización tarda más de 5 segundos, liberamos la UI por seguridad
+      await Promise.race([
+        performSync(),
+        new Promise(resolve => setTimeout(resolve, 5000))
+      ]);
     };
 
     // 1. Obtener sesión inicial
     const initSession = async () => {
       try {
-        const { data } = await supabase.auth.getSession();
+        const { data: { session: initialSession } } = await supabase.auth.getSession();
         if (isMounted) {
-          setSession(data.session);
-          setUser(data.session?.user ?? null);
+          setSession(initialSession);
+          setUser(initialSession?.user ?? null);
           
-          if (data.session?.user) {
-            await syncProfile(data.session.user);
+          if (initialSession?.user) {
+            await syncProfile(initialSession.user);
           }
         }
       } catch (error) {
@@ -109,9 +116,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       if (event === 'SIGNED_IN' && currentSession?.user) {
         setLoading(true);
-        await syncProfile(currentSession.user);
-        setLoading(false);
-      } else if (event === 'SIGNED_OUT') {
+        await syncProfile(currentSession.user).finally(() => {
+          if (isMounted) setLoading(false);
+        });
+      } else if (event === 'SIGNED_OUT' || event === 'INITIAL_SESSION' || event === 'TOKEN_REFRESHED') {
         setLoading(false);
       }
     });
